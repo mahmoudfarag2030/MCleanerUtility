@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import ctypes
 import time
@@ -17,6 +18,16 @@ from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 from cleaners import clean_folder
 
+# --- PYINSTALLER PATH FIX ---
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+# ---------------------------
 
 PREVIEW_SAMPLE_ROWS = 30
 CPU_READER_INIT_DELAY_MS = 500
@@ -34,7 +45,9 @@ class SplashScreen:
         except Exception:
             pass
 
-        img_path = Path("MCleaner.png")
+        # UPDATED: Using resource_path to find the image inside the EXE
+        img_full_path = resource_path("MCleaner.png")
+        img_path = Path(img_full_path)
 
         if img_path.exists():
             img = Image.open(img_path).convert("RGBA")
@@ -320,7 +333,6 @@ class MCleaner:
             self.preview_files(folder)
             button.configure(text=clean_text)
         else:
-            # When toggling from preview -> clean, ask for confirmation and run the cleaner
             self.confirm_and_clean(folder)
             button.configure(text=preview_text)
 
@@ -345,10 +357,6 @@ class MCleaner:
         )
 
     def confirm_and_clean(self, folder):
-        """
-        Confirm and clean a single folder. Uses snapshots of the counters so we can report deltas
-        back into the UI. This avoids depending on the return value/type of `clean_folder`.
-        """
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
             return
@@ -357,7 +365,6 @@ class MCleaner:
         if not messagebox.askyesno("Confirm Cleanup", prompt):
             return
 
-        # Prepare UI
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
         self.reset_stats()
@@ -371,10 +378,8 @@ class MCleaner:
             try:
                 clean_folder(folder, self)
             except Exception as e:
-                # schedule error row
                 self.root.after(0, lambda: self.add_rows_batch([(str(folder), "-", f"Error: {e}")]))
             finally:
-                # compute deltas
                 d_files = max(0, self.last_cleaned - prev_files)
                 d_mb = max(0.0, self.last_size_mb - prev_size)
                 d_prot = max(0, self.protected_count - prev_prot)
@@ -382,7 +387,6 @@ class MCleaner:
                 def finish_ui():
                     self.add_rows_batch([(str(folder), f"{d_files} files", f"Recovered {d_mb:.2f} MB • {d_prot} protected")])
                     self.update_stats()
-                    # done
                     self.set_busy(False)
 
                 self.root.after(0, finish_ui)
@@ -392,28 +396,20 @@ class MCleaner:
     def clean_browser_cache(self):
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
-
         if browser_running_improved():
             messagebox.showwarning("Browser Open", "Please close Chrome or Edge before cleaning browser cache.")
             return
-
-        # If you have a dedicated browser cleaner that reports back, call it here.
-        # For now, we just notify user (this keeps behavior consistent).
         self.add_rows_batch([("Browser Cache", "-", "Cleaning not implemented in this build")])
 
     def clean_recycle_bin(self):
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
-
         try:
-            # Attempt to empty recycle bin. Flags: 0x1 = SHERB_NOCONFIRMATION (we pass 1 here to try to suppress dialogs),
-            # but keep this simple and rely on Windows API.
             ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
             self.add_rows_batch([("Recycle Bin", "-", "Emptied successfully")])
         except Exception as e:
             self.add_rows_batch([("Recycle Bin", "-", f"Error: {e}")])
         finally:
-            # ensure busy state is cleared if this was used as the final step of clean_all
             self.set_busy(False)
 
     def clean_all(self):
@@ -426,7 +422,6 @@ class MCleaner:
             Path(os.path.expandvars(r"%temp%"))
         ]
 
-        # Ask for confirmation with explicit list of folders and recycle bin
         msg = "The following locations will be cleaned:\n\n"
         msg += "\n".join(str(p) for p in folders)
         msg += "\n\nRecycle Bin will also be emptied. This may delete files permanently. Continue?"
@@ -434,7 +429,6 @@ class MCleaner:
         if not messagebox.askyesno("Confirm Full Cleanup", msg):
             return
 
-        # UI prep
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
         self.reset_stats()
@@ -446,35 +440,26 @@ class MCleaner:
             total_before_prot = self.protected_count
 
             for folder in folders:
-                # mark starting row immediately on main thread
                 self.root.after(0, lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")]))
-
                 prev_files = self.last_cleaned
                 prev_size = self.last_size_mb
                 prev_prot = self.protected_count
-
                 try:
-                    # call the cleaner for this folder. We pass unlock=False to avoid dangerous unlock attempts across all items.
                     clean_folder(folder, self, unlock=False)
                 except Exception as e:
-                    # schedule an error line
                     self.root.after(0, lambda f=folder, ee=e: self.add_rows_batch([(str(f), "-", f"Error: {ee}")]))
                     continue
 
-                # compute deltas after the call
                 d_files = max(0, self.last_cleaned - prev_files)
                 d_mb = max(0.0, self.last_size_mb - prev_size)
                 d_prot = max(0, self.protected_count - prev_prot)
 
-                # schedule UI update for this folder
                 self.root.after(0, lambda f=folder, df=d_files, dm=d_mb, dp=d_prot: self.add_rows_batch([
                     (str(f), f"{df} files", f"Recovered {dm:.2f} MB • {dp} protected")
                 ]))
 
-            # After cleaning folders, empty recycle bin on main thread (it will also clear busy state there)
             self.root.after(0, self.clean_recycle_bin)
 
-            # Finally schedule a consolidated summary row
             def final_summary():
                 total_files = self.last_cleaned - total_before_files
                 total_mb = self.last_size_mb - total_before_size
@@ -490,47 +475,35 @@ class MCleaner:
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
             return
-
         self.clear_table()
         self.set_table_headers("Tool", "Status", "Notes")
-
         results = check_basic_tools()
         self.add_rows_batch(results)
 
     def export_excel_report(self):
         fn = f"MCleaner_Report_{datetime.now():%Y-%m-%d_%H-%M-%S}.xlsx"
-
         wb = Workbook()
         ws = wb.active
         ws.append(["Deleted Files", self.last_cleaned])
         ws.append(["Recovered MB", f"{self.last_size_mb:.2f}"])
         ws.append(["Permission Needed", self.protected_count])
         wb.save(fn)
-
         self.add_rows_batch([(fn, "-", "Saved successfully")])
 
     def set_busy(self, value):
-        """
-        Set busy state and disable/enable all sidebar buttons to avoid conflicting operations.
-        """
         self.busy = value
         state = "disabled" if value else "normal"
-
         for w in getattr(self, "sidebar_buttons", []):
             try:
                 w.configure(state=state)
             except Exception:
                 pass
 
-    # end of class
-
 
 if __name__ == "__main__":
     root = ctk.CTk()
     root.withdraw()
-
     app = MCleaner(root)
-
     splash = None
     try:
         splash = SplashScreen(root)
@@ -547,3 +520,4 @@ if __name__ == "__main__":
 
     root.after(2200, show_main)
     root.mainloop()
+    
