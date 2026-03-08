@@ -137,7 +137,7 @@ class MCleaner:
             ("🌐 Clean Browser Cache", self.clean_browser_cache, 48),
             ("🗑 Empty Recycle Bin", self.clean_recycle_bin, 48),
             ("📄 Export Report", self.export_excel_report, 48),
-            ("🔧 Check Basic Tools", self.check_basic_tools, 48),
+            ("🔧 Runtime checker", self.check_basic_tools, 48),
         ]
 
         refs = []
