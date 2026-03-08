@@ -18,6 +18,19 @@ from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 from cleaners import clean_folder
 
+# Safe import: if scheduler_manager fails, app still runs and scheduler features return friendly errors.
+try:
+    from scheduler_manager import create_task, delete_task, task_exists
+except Exception:
+    def create_task(*args, **kwargs):
+        return False, "Scheduler module unavailable"
+
+    def delete_task(*args, **kwargs):
+        return False, "Scheduler module unavailable"
+
+    def task_exists():
+        return False
+
 # --- PYINSTALLER PATH FIX ---
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -45,7 +58,6 @@ class SplashScreen:
         except Exception:
             pass
 
-        # UPDATED: Using resource_path to find the image inside the EXE
         img_full_path = resource_path("MCleaner.png")
         img_path = Path(img_full_path)
 
@@ -149,6 +161,7 @@ class MCleaner:
             ("🧹 Preview User Temp", self.handle_user_temp_button, 48),
             ("🌐 Clean Browser Cache", self.clean_browser_cache, 48),
             ("🗑 Empty Recycle Bin", self.clean_recycle_bin, 48),
+            ("⏰ Scheduled Cleanup", self.open_scheduler_window, 48),
             ("📄 Export Report", self.export_excel_report, 48),
             ("🔧 Runtime checker", self.check_basic_tools, 48),
         ]
@@ -274,7 +287,7 @@ class MCleaner:
     def update_dashboard(self):
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory()
-        disk = psutil.disk_usage("C:\\")
+        disk = psutil.disk_usage("C:\\") 
 
         ghz = self.cpu_reader.read() if self.cpu_reader else 0
         cores = psutil.cpu_count(logical=True) or 0
@@ -294,6 +307,7 @@ class MCleaner:
         ):
             self.draw_graph(card["graph"], hist, card["color"], card["line_id"])
 
+        # schedule next update
         self.root.after(1000, self.update_dashboard)
 
     def add_rows_batch(self, rows):
@@ -440,7 +454,7 @@ class MCleaner:
             total_before_prot = self.protected_count
 
             for folder in folders:
-                self.root.after(0, lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")]))
+                self.root.after(0, lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")] ))
                 prev_files = self.last_cleaned
                 prev_size = self.last_size_mb
                 prev_prot = self.protected_count
@@ -490,6 +504,126 @@ class MCleaner:
         wb.save(fn)
         self.add_rows_batch([(fn, "-", "Saved successfully")])
 
+    def open_scheduler_window(self):
+        """
+        DPI-safe, centered scheduler window.
+        Reserves a dedicated bottom area for buttons so they never get clipped.
+        """
+        win = ctk.CTkToplevel(self.root)
+        win.title("Scheduled Cleanup")
+
+        # Increased geometry to avoid clipping at higher DPI
+        win.geometry("400x560")
+        win.resizable(False, False)
+
+        # Make window modal and bring to front
+        try:
+            win.transient(self.root)
+            win.grab_set()
+            win.lift()
+            win.focus_force()
+            win.attributes("-topmost", True)
+            win.after(200, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
+
+        # center over main window (best effort)
+        try:
+            self.root.update_idletasks()
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y()
+            main_w = self.root.winfo_width()
+            main_h = self.root.winfo_height()
+
+            sx = main_x + (main_w // 2) - 200
+            sy = main_y + (main_h // 2) - 280
+            win.geometry(f"400x560+{sx}+{sy}")
+        except Exception:
+            pass
+
+        # body frame with extra bottom padding
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
+
+        ctk.CTkLabel(
+            body,
+            text="Automatic Cleanup Scheduler",
+            font=("Segoe UI", 18, "bold")
+        ).pack(pady=(10, 20))
+
+        mode = ctk.StringVar(value="Weekly")
+
+        for option in ["Daily", "Weekly", "Monthly"]:
+            ctk.CTkRadioButton(
+                body,
+                text=option,
+                variable=mode,
+                value=option
+            ).pack(pady=8)
+
+        status_text_var = ctk.StringVar(value="Active" if task_exists() else "Not active")
+        status_label = ctk.CTkLabel(body, text=f"Current: {status_text_var.get()}", font=("Segoe UI", 11))
+        status_label.pack(pady=(18, 18))
+
+        # Reserve fixed bottom area for buttons so they won't be clipped
+        button_frame = ctk.CTkFrame(body, fg_color="transparent", height=140)
+        button_frame.pack(fill="x", side="bottom", pady=(10, 6))
+        button_frame.pack_propagate(False)
+
+        def refresh_status():
+            status_text_var.set("Active" if task_exists() else "Not active")
+            status_label.configure(text=f"Current: {status_text_var.get()}")
+
+        def create_schedule():
+            exe_path = sys.executable
+            ok, msg = create_task(exe_path, mode.get())
+            if ok:
+                messagebox.showinfo("Scheduler", msg)
+            else:
+                messagebox.showerror("Scheduler", msg)
+            refresh_status()
+
+        def remove_schedule():
+            ok, msg = delete_task()
+            if ok:
+                messagebox.showinfo("Scheduler", msg)
+            else:
+                messagebox.showerror("Scheduler", msg)
+            refresh_status()
+
+        # Create button (centered)
+        ctk.CTkButton(
+            button_frame,
+            text="Create Schedule",
+            width=260,
+            height=44,
+            command=create_schedule
+        ).pack(pady=(6, 12))
+
+        # Remove button (red) — guaranteed visible due to reserved frame height
+        ctk.CTkButton(
+            button_frame,
+            text="Remove Schedule",
+            width=260,
+            height=44,
+            fg_color="#991b1b",
+            hover_color="#b91c1c",
+            command=remove_schedule
+        ).pack(pady=(0, 6))
+
+        # Properly release modal state on close
+        def _on_close():
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+
     def set_busy(self, value):
         self.busy = value
         state = "disabled" if value else "normal"
@@ -501,6 +635,34 @@ class MCleaner:
 
 
 if __name__ == "__main__":
+    # If launched by Task Scheduler with the special flag, run silent cleanup and exit
+    if "--run-silent" in sys.argv or "--run_silent" in sys.argv:
+        folders = [
+            Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
+            Path(os.path.expandvars(r"%temp%"))
+        ]
+
+        total_deleted = 0
+        total_mb = 0.0
+        total_protected = 0
+
+        for folder in folders:
+            try:
+                # cleaners.clean_folder currently writes into an 'app' object.
+                # We call it best-effort — if it returns a dict (future improvement), we'll merge.
+                clean_folder(folder, None)
+            except Exception as e:
+                print("Scheduled cleanup error for", folder, e)
+
+        # try empty recycle bin (best-effort)
+        try:
+            ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
+        except Exception:
+            pass
+
+        print("Scheduled cleanup finished")
+        sys.exit(0)
+
     root = ctk.CTk()
     root.withdraw()
     app = MCleaner(root)
@@ -520,4 +682,3 @@ if __name__ == "__main__":
 
     root.after(2200, show_main)
     root.mainloop()
-    
