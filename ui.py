@@ -308,7 +308,6 @@ class MCleaner:
             cpu = psutil.cpu_percent()
             ram = psutil.virtual_memory()
             disk = psutil.disk_usage("C:\\")
-
             ghz = self.cpu_reader.read() if self.cpu_reader and hasattr(self.cpu_reader, 'read') else 0
             cores = psutil.cpu_count(logical=True) or 0
 
@@ -503,11 +502,24 @@ class MCleaner:
         self.clear_table()
         self.set_busy(True)
         try:
+            before_files = self.last_cleaned
+            before_size = self.last_size_mb
+
             ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
-            self.add_rows_batch([("Recycle Bin", "-", "Emptied successfully")])
+
+            recovered_files = max(0, self.last_cleaned - before_files)
+            recovered_mb = max(0.0, self.last_size_mb - before_size)
+            self.add_rows_batch([
+                ("Recycle Bin", "-", f"Emptied successfully • {recovered_mb:.2f} MB")
+            ])
+
         except Exception as e:
-            self.add_rows_batch([("Recycle Bin", "-", f"Error: {e}")])
+            self.add_rows_batch([
+                ("Recycle Bin", "-", f"Error: {e}")
+            ])
+
         finally:
+            self.update_stats()
             self.set_busy(False)
 
     def clean_all(self):
@@ -538,26 +550,36 @@ class MCleaner:
             total_before_prot = self.protected_count
 
             for folder in folders:
-                # insert row that cleaning started
-                self.root.after(0, lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")] ))
+                self.root.after(
+                    0,
+                    lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")])
+                )
+
                 prev_files = self.last_cleaned
                 prev_size = self.last_size_mb
                 prev_prot = self.protected_count
+
                 try:
                     clean_folder(folder, self, unlock=False)
                 except Exception as e:
-                    self.root.after(0, lambda f=folder, ee=e: self.add_rows_batch([(str(f), "-", f"Error: {ee}")]))
+                    self.root.after(
+                        0,
+                        lambda f=folder, ee=e: self.add_rows_batch([(str(f), "-", f"Error: {ee}")])
+                    )
                     continue
 
                 d_files = max(0, self.last_cleaned - prev_files)
                 d_mb = max(0.0, self.last_size_mb - prev_size)
                 d_prot = max(0, self.protected_count - prev_prot)
 
-                self.root.after(0, lambda f=folder, df=d_files, dm=d_mb, dp=d_prot: self.add_rows_batch([
-                    (str(f), f"{df} files", f"Recovered {dm:.2f} MB • {dp} protected")
-                ]))
+                self.root.after(
+                    0,
+                    lambda f=folder, df=d_files, dm=d_mb, dp=d_prot:
+                    self.add_rows_batch([
+                        (str(f), f"{df} files", f"Recovered {dm:.2f} MB • {dp} protected")
+                    ])
+                )
 
-            # attempt recycle bin clean
             try:
                 ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
             except Exception:
@@ -567,7 +589,11 @@ class MCleaner:
                 total_files = self.last_cleaned - total_before_files
                 total_mb = self.last_size_mb - total_before_size
                 total_prot = self.protected_count - total_before_prot
-                self.add_rows_batch([("Summary", f"{total_files} files", f"Recovered {total_mb:.2f} MB • {total_prot} protected")])
+
+                self.add_rows_batch([
+                    ("Summary", f"{total_files} files", f"Recovered {total_mb:.2f} MB • {total_prot} protected")
+                ])
+
                 self.update_stats()
                 self.set_busy(False)
 
