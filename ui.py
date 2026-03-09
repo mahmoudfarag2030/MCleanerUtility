@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from collections import deque
 from datetime import datetime
-
+from cleaners import clean_folder, clean_browser_cache as run_browser_clean
 import customtkinter as ctk
 import psutil
 from openpyxl import Workbook
@@ -16,7 +16,6 @@ from PIL import Image
 
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
-from cleaners import clean_folder
 
 # Safe import: if scheduler_manager fails, app still runs and scheduler features return friendly errors.
 try:
@@ -137,12 +136,19 @@ class MCleaner:
         self.protected_count = 0
 
     def init_cpu_reader(self):
-        self.cpu_reader = CpuSpeedReader()
+        try:
+            self.cpu_reader = CpuSpeedReader()
+        except Exception:
+            self.cpu_reader = None
 
     def set_table_headers(self, h1="File", h2="Size", h3="Status"):
-        self.table.heading("file", text=h1)
-        self.table.heading("size", text=h2)
-        self.table.heading("status", text=h3)
+        # keep using same underlying columns; only change displayed headings
+        try:
+            self.table.heading("file", text=h1)
+            self.table.heading("size", text=h2)
+            self.table.heading("status", text=h3)
+        except Exception:
+            pass
 
     def _build_ui(self):
         main = ctk.CTkFrame(self.root)
@@ -210,7 +216,10 @@ class MCleaner:
         table_frame.pack(fill="both", expand=True)
 
         style = ttk.Style()
-        style.theme_use("clam")
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
         style.configure("Treeview", background="#111827", foreground="white", fieldbackground="#111827", rowheight=30)
         style.configure("Treeview.Heading", background="#1f2937", foreground="white")
         style.map("Treeview", background=[("selected", "#2563eb")])
@@ -239,11 +248,14 @@ class MCleaner:
         graph = Canvas(frame, height=40, bg="#1a1a1a", highlightthickness=0)
         graph.pack(fill="x", padx=8, pady=5)
 
+        # create a minimal initial line
+        line_id = graph.create_line(0, 20, 1, 20, fill=color, width=2, smooth=True)
+
         return {
             "value": value,
             "graph": graph,
             "color": color,
-            "line_id": graph.create_line(0, 20, 1, 20, fill=color, width=2, smooth=True)
+            "line_id": line_id,
         }
 
     def make_stat_badge(self, parent, title, value):
@@ -258,99 +270,141 @@ class MCleaner:
         return val
 
     def draw_graph(self, canvas, data, color, line_id):
-        canvas.update_idletasks()
+        try:
+            canvas.update_idletasks()
 
-        w = canvas.winfo_width()
-        h = canvas.winfo_height()
+            w = canvas.winfo_width()
+            h = canvas.winfo_height()
 
-        if w < 10:
-            return
+            if w < 10 or h < 5:
+                return
 
-        step = w / max(len(data) - 1, 1)
+            step = w / max(len(data) - 1, 1)
 
-        pts = []
-        for i, v in enumerate(data):
-            x = i * step
-            y = h - (max(0, min(100, v)) / 100 * h)
-            pts.extend((x, y))
+            pts = []
+            for i, v in enumerate(data):
+                x = i * step
+                y = h - (max(0, min(100, v)) / 100 * h)
+                pts.extend((x, y))
 
-        canvas.coords(line_id, *pts)
+            canvas.coords(line_id, *pts)
+        except Exception:
+            pass
 
     def animate_badges(self, phase=0):
         for i, (frame, _) in enumerate(self.badge_frames):
             factor = 1 + 0.05 * math.sin(phase + i)
             c = int(17 * factor)
-            frame.configure(fg_color=f"#{c:02x}{24:02x}{39:02x}")
+            # keep greenish-blue tone but subtly vary brightness
+            try:
+                frame.configure(fg_color=f"#{c:02x}{24:02x}{39:02x}")
+            except Exception:
+                pass
 
         self.root.after(140, lambda: self.animate_badges(phase + 0.25))
 
     def update_dashboard(self):
-        cpu = psutil.cpu_percent()
-        ram = psutil.virtual_memory()
-        disk = psutil.disk_usage("C:\\") 
+        try:
+            cpu = psutil.cpu_percent()
+            ram = psutil.virtual_memory()
+            disk = psutil.disk_usage("C:\\")
 
-        ghz = self.cpu_reader.read() if self.cpu_reader else 0
-        cores = psutil.cpu_count(logical=True) or 0
+            ghz = self.cpu_reader.read() if self.cpu_reader and hasattr(self.cpu_reader, 'read') else 0
+            cores = psutil.cpu_count(logical=True) or 0
 
-        self.cpu_history.append(cpu)
-        self.ram_history.append(ram.percent)
-        self.disk_history.append(disk.percent)
+            self.cpu_history.append(cpu)
+            self.ram_history.append(ram.percent)
+            self.disk_history.append(disk.percent)
 
-        self.cpu_card["value"].configure(text=f"{cpu:.0f}% {ghz:.2f} GHz / {cores} threads")
-        self.ram_card["value"].configure(text=f"{ram.used/(1024**3):.1f}/{ram.total/(1024**3):.1f} GB ({ram.percent:.0f}%)")
-        self.disk_card["value"].configure(text=f"{disk.percent:.0f}% used")
+            self.cpu_card["value"].configure(text=f"{cpu:.0f}% {ghz:.2f} GHz / {cores} threads")
+            self.ram_card["value"].configure(text=f"{ram.used/(1024**3):.1f}/{ram.total/(1024**3):.1f} GB ({ram.percent:.0f}%)")
+            self.disk_card["value"].configure(text=f"{disk.percent:.0f}% used")
 
-        for card, hist in (
-            (self.cpu_card, self.cpu_history),
-            (self.ram_card, self.ram_history),
-            (self.disk_card, self.disk_history),
-        ):
-            self.draw_graph(card["graph"], hist, card["color"], card["line_id"])
+            for card, hist in (
+                (self.cpu_card, self.cpu_history),
+                (self.ram_card, self.ram_history),
+                (self.disk_card, self.disk_history),
+            ):
+                self.draw_graph(card["graph"], hist, card["color"], card["line_id"])
+
+        except Exception:
+            pass
 
         # schedule next update
-        self.root.after(1000, self.update_dashboard)
+        try:
+            self.root.after(1000, self.update_dashboard)
+        except Exception:
+            pass
 
     def add_rows_batch(self, rows):
         for r in rows:
-            self.table.insert("", "end", values=r)
+            try:
+                self.table.insert("", "end", values=r)
+            except Exception:
+                pass
 
     def clear_table(self):
-        for row in self.table.get_children():
-            self.table.delete(row)
+        for row in list(self.table.get_children()):
+            try:
+                self.table.delete(row)
+            except Exception:
+                pass
 
     def update_stats(self):
-        self.card_deleted.configure(text=f"{self.last_cleaned} files")
-        self.card_recoverable.configure(text=f"{self.last_size_mb:.2f} MB")
-        self.card_protected.configure(text=f"{self.protected_count} files")
-        self.progress.set(0)
+        try:
+            self.card_deleted.configure(text=f"{self.last_cleaned} files")
+            self.card_recoverable.configure(text=f"{self.last_size_mb:.2f} MB")
+            self.card_protected.configure(text=f"{self.protected_count} files")
+            self.progress.set(0)
+        except Exception:
+            pass
 
     def preview_files(self, folder: Path):
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
 
         rows, total = [], 0
-        for i, path in enumerate((Path(r) / f for r, _, fs in os.walk(folder) for f in fs)):
-            if i >= PREVIEW_SAMPLE_ROWS:
-                break
+        # walk a sample of files within the folder
+        try:
+            i = 0
+            for root_dir, _, files in os.walk(folder):
+                for fname in files:
+                    if i >= PREVIEW_SAMPLE_ROWS:
+                        break
+                    try:
+                        path = Path(root_dir) / fname
+                        size = path.stat().st_size
+                        total += size
+                        rows.append((path.name, format_size(size), "Ready to clean"))
+                        i += 1
+                    except Exception:
+                        continue
+                if i >= PREVIEW_SAMPLE_ROWS:
+                    break
+        except Exception:
+            pass
+
+        self.add_rows_batch(rows)
+        try:
+            self.card_recoverable.configure(text=f"{total/(1024**2):.2f} MB (sample)")
+        except Exception:
+            pass
+
+    def toggle_preview_clean(self, key, folder, button, preview_text, clean_text):
+        if not self.preview_ready.get(key, False):
+            self.preview_files(folder)
             try:
-                size = path.stat().st_size
-                total += size
-                rows.append((path.name, format_size(size), "Ready to clean"))
+                button.configure(text=clean_text)
+            except Exception:
+                pass
+        else:
+            self.confirm_and_clean(folder)
+            try:
+                button.configure(text=preview_text)
             except Exception:
                 pass
 
-        self.add_rows_batch(rows)
-        self.card_recoverable.configure(text=f"{total/(1024**2):.2f} MB (sample)")
-
-    def toggle_preview_clean(self, key, folder, button, preview_text, clean_text):
-        if not self.preview_ready[key]:
-            self.preview_files(folder)
-            button.configure(text=clean_text)
-        else:
-            self.confirm_and_clean(folder)
-            button.configure(text=preview_text)
-
-        self.preview_ready[key] = not self.preview_ready[key]
+        self.preview_ready[key] = not self.preview_ready.get(key, False)
 
     def handle_temp_button(self):
         self.toggle_preview_clean(
@@ -408,16 +462,46 @@ class MCleaner:
         threading.Thread(target=worker, daemon=True).start()
 
     def clean_browser_cache(self):
+        # prepare UI
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
-        if browser_running_improved():
-            messagebox.showwarning("Browser Open", "Please close Chrome or Edge before cleaning browser cache.")
-            return
-        self.add_rows_batch([("Browser Cache", "-", "Cleaning not implemented in this build")])
+
+        # if browser is running, warn and abort
+        try:
+            if browser_running_improved():
+                messagebox.showwarning(
+                    "Browser Open",
+                    "Please close Chrome or Edge before cleaning browser cache."
+                )
+                return
+        except Exception:
+            # if helper fails, continue with attempt
+            pass
+
+        self.reset_stats()
+        self.set_busy(True)
+
+        def worker():
+            try:
+                run_browser_clean(self)
+            except Exception as e:
+                try:
+                    self.root.after(0, lambda: self.add_rows_batch([("Browser Cache", "-", f"Error: {e}")]))
+                except Exception:
+                    pass
+            finally:
+                try:
+                    self.root.after(0, self.update_stats)
+                    self.root.after(0, lambda: self.set_busy(False))
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def clean_recycle_bin(self):
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
+        self.set_busy(True)
         try:
             ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
             self.add_rows_batch([("Recycle Bin", "-", "Emptied successfully")])
@@ -454,6 +538,7 @@ class MCleaner:
             total_before_prot = self.protected_count
 
             for folder in folders:
+                # insert row that cleaning started
                 self.root.after(0, lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")] ))
                 prev_files = self.last_cleaned
                 prev_size = self.last_size_mb
@@ -472,7 +557,11 @@ class MCleaner:
                     (str(f), f"{df} files", f"Recovered {dm:.2f} MB • {dp} protected")
                 ]))
 
-            self.root.after(0, self.clean_recycle_bin)
+            # attempt recycle bin clean
+            try:
+                ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
+            except Exception:
+                pass
 
             def final_summary():
                 total_files = self.last_cleaned - total_before_files
@@ -480,6 +569,7 @@ class MCleaner:
                 total_prot = self.protected_count - total_before_prot
                 self.add_rows_batch([("Summary", f"{total_files} files", f"Recovered {total_mb:.2f} MB • {total_prot} protected")])
                 self.update_stats()
+                self.set_busy(False)
 
             self.root.after(0, final_summary)
 
@@ -491,8 +581,11 @@ class MCleaner:
             return
         self.clear_table()
         self.set_table_headers("Tool", "Status", "Notes")
-        results = check_basic_tools()
-        self.add_rows_batch(results)
+        try:
+            results = check_basic_tools()
+            self.add_rows_batch(results)
+        except Exception as e:
+            self.add_rows_batch([("Runtime Check", "-", f"Error: {e}")])
 
     def export_excel_report(self):
         fn = f"MCleaner_Report_{datetime.now():%Y-%m-%d_%H-%M-%S}.xlsx"
@@ -501,8 +594,11 @@ class MCleaner:
         ws.append(["Deleted Files", self.last_cleaned])
         ws.append(["Recovered MB", f"{self.last_size_mb:.2f}"])
         ws.append(["Permission Needed", self.protected_count])
-        wb.save(fn)
-        self.add_rows_batch([(fn, "-", "Saved successfully")])
+        try:
+            wb.save(fn)
+            self.add_rows_batch([(fn, "-", "Saved successfully")])
+        except Exception as e:
+            self.add_rows_batch([(fn, "-", f"Error: {e}")])
 
     def open_scheduler_window(self):
         """
@@ -641,10 +737,6 @@ if __name__ == "__main__":
             Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
             Path(os.path.expandvars(r"%temp%"))
         ]
-
-        total_deleted = 0
-        total_mb = 0.0
-        total_protected = 0
 
         for folder in folders:
             try:
