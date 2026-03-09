@@ -71,3 +71,54 @@ def clean_browser_cache(app):
     if app:
         app.root.after(0, app.update_stats)
         app.root.after(0, lambda: app.set_busy(False))
+
+
+# =========================================================
+# INSTALLED APPS FEATURE
+# =========================================================
+
+def get_installed_apps():
+    import winreg
+
+    apps = []
+
+    locations = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ]
+
+    for root, path in locations:
+        try:
+            key = winreg.OpenKey(root, path)
+
+            for i in range(winreg.QueryInfoKey(key)[0]):
+                try:
+                    subkey_name = winreg.EnumKey(key, i)
+                    subkey = winreg.OpenKey(key, subkey_name)
+
+                    try:
+                        name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                    except Exception:
+                        continue
+
+                    try:
+                        version = winreg.QueryValueEx(subkey, "DisplayVersion")[0]
+                    except Exception:
+                        version = "-"
+
+                    try:
+                        publisher = winreg.QueryValueEx(subkey, "Publisher")[0]
+                    except Exception:
+                        publisher = "-"
+
+                    apps.append((name, version, publisher))
+
+                except Exception:
+                    continue
+
+        except Exception:
+            continue
+
+    apps.sort(key=lambda x: x[0].lower())
+
+    return apps

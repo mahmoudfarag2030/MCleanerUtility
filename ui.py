@@ -13,7 +13,7 @@ import psutil
 from openpyxl import Workbook
 from tkinter import ttk, messagebox, Canvas
 from PIL import Image
-
+from installed_apps import get_installed_apps
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 
@@ -168,8 +168,9 @@ class MCleaner:
             ("🌐 Clean Browser Cache", self.clean_browser_cache, 48),
             ("🗑 Empty Recycle Bin", self.clean_recycle_bin, 48),
             ("⏰ Scheduled Cleanup", self.open_scheduler_window, 48),
-            ("📄 Export Report", self.export_excel_report, 48),
+            ("📦 Installed Apps", self.show_installed_apps, 48),
             ("🔧 Runtime checker", self.check_basic_tools, 48),
+            ("📄 Export Report", self.export_excel_report, 48),
         ]
 
         refs = []
@@ -600,7 +601,26 @@ class MCleaner:
             self.root.after(0, final_summary)
 
         threading.Thread(target=worker, daemon=True).start()
+    def show_installed_apps(self):
+        if self.busy:
+            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            return
 
+        self.clear_table()
+        self.set_table_headers("Application", "Version", "Publisher")
+
+        try:
+            apps = get_installed_apps()
+
+            if not apps:
+                self.add_rows_batch([("No applications found", "-", "-")])
+                return
+
+            self.add_rows_batch(apps)
+
+        except Exception as e:
+            self.add_rows_batch([("Installed Apps", "-", f"Error: {e}")])
+            
     def check_basic_tools(self):
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
