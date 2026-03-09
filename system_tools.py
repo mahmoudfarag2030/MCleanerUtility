@@ -20,7 +20,7 @@ except Exception:
 # =========================================================
 # UNINSTALL REGISTRY SCAN
 # =========================================================
-def scan_uninstall(keyword):
+def get_all_installed_names():
     roots = [
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
@@ -37,17 +37,19 @@ def scan_uninstall(keyword):
                 try:
                     sub = winreg.OpenKey(key, winreg.EnumKey(key, i))
                     dn, _ = winreg.QueryValueEx(sub, "DisplayName")
-
-                    if keyword.lower() in dn.lower():
-                        found.append(dn)
+                    found.append(dn)
 
                 except Exception:
-                    pass
+                    continue
 
         except Exception:
-            pass
+            continue
 
     return found
+
+
+def scan_uninstall(keyword, installed):
+    return [x for x in installed if keyword.lower() in x.lower()]
 
 
 # =========================================================
@@ -122,11 +124,10 @@ def file_exists(path):
 # =========================================================
 def check_basic_tools():
     sys32 = Path(os.getenv("SystemRoot", r"C:\Windows")) / "System32"
-    wow64 = Path(os.getenv("SystemRoot", r"C:\Windows")) / "SysWOW64"
+    installed = get_all_installed_names()
 
     results = []
 
-    # ---------------- Visual C++ ----------------
     vc_versions = [
         "Visual C++ 2015",
         "Visual C++ 2013",
@@ -137,13 +138,12 @@ def check_basic_tools():
     ]
 
     for version in vc_versions:
-        x64 = any("x64" in x for x in scan_uninstall(version))
-        x86 = any("x86" in x for x in scan_uninstall(version))
+        x64 = any("x64" in x for x in scan_uninstall(version, installed))
+        x86 = any("x86" in x for x in scan_uninstall(version, installed))
 
         results.append((f"{version} x64", "Installed" if x64 else "Missing", ""))
         results.append((f"{version} x86", "Installed" if x86 else "Missing", ""))
 
-    # ---------------- DirectX ----------------
     dx_files = [
         ("DirectX Legacy DX9", sys32 / "d3dx9_43.dll"),
         ("DirectX Legacy DX10", sys32 / "d3dx10_43.dll"),
@@ -154,64 +154,58 @@ def check_basic_tools():
     for name, file in dx_files:
         results.append((name, "Installed" if file_exists(file) else "Missing", ""))
 
-    # ---------------- .NET ----------------
     dotnet_checks = [
-        ("NET Framework 4.8", scan_uninstall(".NET Framework 4.8")),
-        ("NET Desktop Runtime 8", scan_uninstall(".NET Runtime 8")),
-        ("NET Desktop Runtime 10", scan_uninstall(".NET Runtime 10")),
-        ("NET Framework 3.5", scan_uninstall(".NET Framework 3.5")),
+        ("NET Framework 4.8", scan_uninstall(".NET Framework 4.8", installed)),
+        ("NET Desktop Runtime 8", scan_uninstall(".NET Runtime 8", installed)),
+        ("NET Desktop Runtime 10", scan_uninstall(".NET Runtime 10", installed)),
+        ("NET Framework 3.5", scan_uninstall(".NET Framework 3.5", installed)),
     ]
 
     for name, found in dotnet_checks:
         results.append((name, "Installed" if found else "Missing", ""))
 
-    # ---------------- XNA ----------------
     results.append((
         "XNA Framework 4.0",
-        "Installed" if scan_uninstall("XNA Framework Redistributable 4.0") else "Missing",
+        "Installed" if scan_uninstall("XNA Framework Redistributable 4.0", installed) else "Missing",
         ""
     ))
 
     results.append((
         "XNA Framework 3.1",
-        "Installed" if scan_uninstall("XNA Framework Redistributable 3.1") else "Missing",
+        "Installed" if scan_uninstall("XNA Framework Redistributable 3.1", installed) else "Missing",
         ""
     ))
 
-    # ---------------- OpenAL ----------------
     results.append((
         "OpenAL",
         "Installed" if file_exists(sys32 / "OpenAL32.dll") else "Missing",
         ""
     ))
 
-    # ---------------- Java ----------------
     results.append((
         "Java Runtime 8",
-        "Installed" if scan_uninstall("Java") else "Missing",
+        "Installed" if scan_uninstall("Java", installed) else "Missing",
         ""
     ))
 
-    # ---------------- Gaming Platforms ----------------
     results.append((
         "Steam",
-        "Installed" if scan_uninstall("Steam") else "Missing",
+        "Installed" if scan_uninstall("Steam", installed) else "Missing",
         ""
     ))
 
     results.append((
         "Epic Games",
-        "Installed" if scan_uninstall("Epic") else "Missing",
+        "Installed" if scan_uninstall("Epic", installed) else "Missing",
         ""
     ))
 
     results.append((
         "NVIDIA PhysX",
-        "Installed" if scan_uninstall("PhysX") else "Missing",
+        "Installed" if scan_uninstall("PhysX", installed) else "Missing",
         ""
     ))
 
-    # ---------------- Vulkan ----------------
     results.append((
         "Vulkan Runtime",
         "Installed" if file_exists(sys32 / "vulkan-1.dll") else "Missing",

@@ -27,7 +27,7 @@ def read_apps_from_key(root, path):
                 except Exception:
                     publisher = "-"
 
-                apps.append((name, version, publisher))
+                apps.append((name.strip(), version.strip(), publisher.strip()))
 
             except Exception:
                 continue
@@ -40,14 +40,30 @@ def read_apps_from_key(root, path):
 
 def get_installed_apps():
     locations = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        )
     ]
 
     all_apps = []
+    seen = set()
 
     for root, path in locations:
-        all_apps.extend(read_apps_from_key(root, path))
+        for app in read_apps_from_key(root, path):
+            key = app[0].lower()
+
+            if key not in seen:
+                seen.add(key)
+                all_apps.append(app)
 
     all_apps.sort(key=lambda x: x[0].lower())
 

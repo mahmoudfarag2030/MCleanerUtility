@@ -16,7 +16,7 @@ from PIL import Image
 from installed_apps import get_installed_apps
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
-
+from startup_apps import get_startup_apps, toggle_startup_app
 # Safe import: if scheduler_manager fails, app still runs and scheduler features return friendly errors.
 try:
     from scheduler_manager import create_task, delete_task, task_exists
@@ -169,6 +169,7 @@ class MCleaner:
             ("🗑 Empty Recycle Bin", self.clean_recycle_bin, 48),
             ("⏰ Scheduled Cleanup", self.open_scheduler_window, 48),
             ("📦 Installed Apps", self.show_installed_apps, 48),
+            ("🚀 Startup Apps", self.show_startup_apps, 48),
             ("🔧 Runtime checker", self.check_basic_tools, 48),
             ("📄 Export Report", self.export_excel_report, 48),
         ]
@@ -486,7 +487,7 @@ class MCleaner:
                 run_browser_clean(self)
             except Exception as e:
                 try:
-                    self.root.after(0, lambda: self.add_rows_batch([("Browser Cache", "-", f"Error: {e}")]))
+                    self.root.after(0, lambda: self.add_rows_batch([("Browser Cache", "-", f"Error: {e}")] ))
                 except Exception:
                     pass
             finally:
@@ -601,6 +602,7 @@ class MCleaner:
             self.root.after(0, final_summary)
 
         threading.Thread(target=worker, daemon=True).start()
+
     def show_installed_apps(self):
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
@@ -620,7 +622,107 @@ class MCleaner:
 
         except Exception as e:
             self.add_rows_batch([("Installed Apps", "-", f"Error: {e}")])
-            
+
+    def show_startup_apps(self):
+        """
+        Populate table with startup apps and bind double-click to toggle state.
+        Displays rows as (Application, Status, Source).
+        Double-clicking a row will attempt to enable/disable that startup entry
+        using toggle_startup_app(app_name, enable_bool) and refresh the list.
+        On failure, a clear modal messagebox will show the failure reason.
+        """
+        if self.busy:
+            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            return
+
+        # clear any previous double-click binding to avoid stacking handlers
+        try:
+            self.table.unbind("<Double-1>")
+        except Exception:
+            pass
+
+        self.clear_table()
+        self.set_table_headers("Application", "Status", "Source")
+
+        try:
+            apps = get_startup_apps()
+
+            if not apps:
+                self.add_rows_batch([("No startup apps found", "-", "-")])
+                return
+
+            # add rows returned by get_startup_apps (expected tuples: name, status, source)
+            self.add_rows_batch(apps)
+
+            def toggle_selected(event):
+                try:
+                    # determine the item under the mouse pointer (more robust than selection)
+                    row_id = self.table.identify_row(event.y)
+                    if not row_id:
+                        # fallback to selection if identify fails
+                        sel = self.table.selection()
+                        if not sel:
+                            return
+                        row_id = sel[0]
+
+                    values = self.table.item(row_id).get("values", [])
+
+                    if not values or len(values) < 2:
+                        return
+
+                    app_name = values[0]
+                    status = values[1]
+                    source = values[2] if len(values) >= 3 else None
+
+                    # desired state: enable if currently "Disabled"
+                    enable = str(status).strip().lower() == "disabled"
+
+                    # call toggle; support functions that return bool or (ok,msg)
+                    try:
+                        result = toggle_startup_app(app_name, enable)
+                    except Exception as e:
+                        result = (False, str(e))
+
+                    ok = False
+                    msg = None
+
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        ok, msg = bool(result[0]), str(result[1])
+                    else:
+                        ok = bool(result)
+                        msg = None
+
+                    if ok:
+                        # refresh view to show new state (keeps behavior simple and consistent)
+                        self.show_startup_apps()
+                    else:
+                        # Provide a helpful message to the user (modal popup)
+                        if not msg:
+                            if not is_admin():
+                                msg = "Requires Administrator Permission"
+                            else:
+                                msg = "Failed to modify startup (unknown reason)"
+                        # Show modal warning with details
+                        try:
+                            messagebox.showwarning("Startup Apps", f"{app_name}\n\n{msg}")
+                        except Exception:
+                            pass
+
+                except Exception as e:
+                    try:
+                        messagebox.showerror("Startup Apps", f"Toggle failed: {e}")
+                    except Exception:
+                        pass
+
+            # bind double-click to toggle (uses event to find correct row)
+            try:
+                self.table.bind("<Double-1>", toggle_selected)
+            except Exception:
+                pass
+
+        except Exception as e:
+            self.add_rows_batch([("Startup Apps", "-", f"Error: {e}")])
+
     def check_basic_tools(self):
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")

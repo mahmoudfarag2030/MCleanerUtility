@@ -1,5 +1,4 @@
 import ctypes
-import time
 from pathlib import Path
 import psutil
 
@@ -31,11 +30,12 @@ def browser_running_improved():
 
     for proc in psutil.process_iter(["name"]):
         try:
-            if (proc.info.get("name") or "").lower() in targets:
-                break
+            name = (proc.info.get("name") or "").lower()
+
+            if name in targets:
+                return True
+
         except Exception:
             continue
-    else:
-        return False
 
-    return True
+    return False
