@@ -17,6 +17,7 @@ from installed_apps import get_installed_apps
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 from startup_apps import get_startup_apps, toggle_startup_app
+from speed_test import run_speed_test
 # Safe import: if scheduler_manager fails, app still runs and scheduler features return friendly errors.
 try:
     from scheduler_manager import create_task, delete_task, task_exists
@@ -170,6 +171,7 @@ class MCleaner:
             ("⏰ Scheduled Cleanup", self.open_scheduler_window, 48),
             ("📦 Installed Apps", self.show_installed_apps, 48),
             ("🚀 Startup Apps", self.show_startup_apps, 48),
+            ("📡 Internet Speed Test", self.run_speed_test_ui, 48),
             ("🔧 Runtime checker", self.check_basic_tools, 48),
             ("📄 Export Report", self.export_excel_report, 48),
         ]
@@ -447,7 +449,7 @@ class MCleaner:
             try:
                 clean_folder(folder, self)
             except Exception as e:
-                self.root.after(0, lambda: self.add_rows_batch([(str(folder), "-", f"Error: {e}")]))
+                self.root.after(0, lambda: self.add_rows_batch([(str(folder), "-", f"Error: {e}")] ))
             finally:
                 d_files = max(0, self.last_cleaned - prev_files)
                 d_mb = max(0.0, self.last_size_mb - prev_size)
@@ -722,6 +724,102 @@ class MCleaner:
 
         except Exception as e:
             self.add_rows_batch([("Startup Apps", "-", f"Error: {e}")])
+
+    def run_speed_test_ui(self):
+        """
+        Open a small modal and run the imported run_speed_test() function
+        in a background thread. Displays results in a modal when finished.
+        This method keeps UI responsive and doesn't touch other unrelated code.
+        """
+        # create modal
+        win = ctk.CTkToplevel(self.root)
+        win.title("Speed Test")
+        try:
+            win.transient(self.root)
+            win.grab_set()
+            win.lift()
+            win.focus_force()
+            win.attributes("-topmost", True)
+            win.after(200, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
+
+        # try center
+        try:
+            self.root.update_idletasks()
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y()
+            main_w = self.root.winfo_width()
+            main_h = self.root.winfo_height()
+            sx = main_x + (main_w // 2) - 200
+            sy = main_y + (main_h // 2) - 120
+            win.geometry(f"400x220+{sx}+{sy}")
+        except Exception:
+            pass
+
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=16)
+
+        lbl = ctk.CTkLabel(body, text="Running speed test...\nThis may take 30-60 seconds", anchor="center")
+        lbl.pack(pady=(8, 12))
+
+        prog = ctk.CTkProgressBar(body, mode="indeterminate")
+        prog.pack(fill="x", pady=(4, 12))
+        try:
+            prog.start()
+        except Exception:
+            pass
+
+        result_text = ctk.CTkLabel(body, text="", anchor="w", justify="left")
+        result_text.pack(fill="both", expand=True)
+
+        def worker():
+            try:
+                res = run_speed_test()
+            except Exception as e:
+                res = ("__error__", str(e))
+
+            def finish():
+                try:
+                    prog.stop()
+                except Exception:
+                    pass
+
+                # keep the modal open briefly to show results then close on OK
+                if isinstance(res, dict):
+                    ping = res.get("ping") or res.get("latency") or res.get("ms") or "-"
+                    dl = res.get("download") or res.get("down") or res.get("dl") or "-"
+                    ul = res.get("upload") or res.get("up") or res.get("ul") or "-"
+                    txt = f"Ping: {ping}\nDownload: {dl}\nUpload: {ul}"
+                    try:
+                        messagebox.showinfo("Speed Test Results", txt)
+                    except Exception:
+                        pass
+                elif isinstance(res, tuple) and len(res) >= 2 and res[0] == "__error__":
+                    try:
+                        messagebox.showerror("Speed Test Error", f"{res[1]}")
+                    except Exception:
+                        pass
+                else:
+                    # fallback: show repr
+                    try:
+                        messagebox.showinfo("Speed Test", str(res))
+                    except Exception:
+                        pass
+
+                try:
+                    win.grab_release()
+                except Exception:
+                    pass
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+
+            # schedule UI update on main thread
+            self.root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def check_basic_tools(self):
         if self.busy:
