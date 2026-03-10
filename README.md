@@ -1,2 +1,3 @@
 Build with
-pyinstaller --noconfirm --onefile --windowed --icon=MCleaner.ico --add-data "MCleaner.png;." main.py
+pyinstaller --onefile --windowed --icon=MCleaner.ico --add-data "MCleaner.png;." --collect-all customtkinter main.py
+
