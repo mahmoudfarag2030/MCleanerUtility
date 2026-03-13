@@ -45,6 +45,7 @@ def resource_path(relative_path):
 
 
 PREVIEW_SAMPLE_ROWS = 30
+APP_VERSION = "0.9"
 CPU_READER_INIT_DELAY_MS = 500
 
 
@@ -69,20 +70,27 @@ class SplashScreen:
             w, h = 360, int(360 * ratio)
 
             self.image = ctk.CTkImage(light_image=img, dark_image=img, size=(w, h))
-            ctk.CTkLabel(self.root, image=self.image, text="").pack(fill="both", expand=True)
+            img_label = ctk.CTkLabel(self.root, image=self.image, text="")
+            img_label.pack(fill="both", expand=True)
 
             screen_w = self.root.winfo_screenwidth()
             screen_h = self.root.winfo_screenheight()
             x = (screen_w - w) // 2
-            y = (screen_h - (h + 40)) // 2
+            y = (screen_h - (h + 60)) // 2  # add extra space for status labels
 
-            self.root.geometry(f"{w}x{h+40}+{x}+{y}")
+            self.root.geometry(f"{w}x{h+60}+{x}+{y}")
+
+            footer = ctk.CTkFrame(self.root, fg_color="transparent")
+            footer.pack(fill="x", side="bottom", pady=(6, 10))
+
+            ctk.CTkLabel(footer, text=f"v{APP_VERSION}", font=("Segoe UI", 11, "bold")).pack()
+            ctk.CTkLabel(footer, text="Initializing cleanup engine...", font=("Segoe UI", 10)).pack()
         else:
             self.root.geometry("360x220")
             ctk.CTkLabel(self.root, text="MCleaner", font=("Segoe UI", 26, "bold")).pack(expand=True)
 
-        ctk.CTkLabel(self.root, text="v0.7", font=("Segoe UI", 11, "bold")).place(relx=0.5, rely=0.85, anchor="center")
-        ctk.CTkLabel(self.root, text="Initializing cleanup engine...", font=("Segoe UI", 10)).place(relx=0.5, rely=0.92, anchor="center")
+            ctk.CTkLabel(self.root, text=f"v{APP_VERSION}", font=("Segoe UI", 11, "bold")).pack(pady=(8, 2))
+            ctk.CTkLabel(self.root, text="Initializing cleanup engine...", font=("Segoe UI", 10)).pack()
 
         self.root.attributes("-alpha", 0.0)
         self.fade_in()
@@ -110,9 +118,10 @@ class MCleaner:
         ctk.set_default_color_theme("dark-blue")
 
         self.root = root
-        self.root.title(f"MCleaner v0.7 {'(Administrator)' if is_admin() else '(Standard Mode)'}")
+        self.root.title(f"MCleaner v{APP_VERSION} {'(Administrator)' if is_admin() else '(Standard Mode)'}")
         self.root.geometry("1200x780")
         self.root.minsize(1080, 700)
+        self.center_window(1200, 780)
 
         self.preview_ready = {"temp": False, "user_temp": False}
         self.badge_frames = []
@@ -134,6 +143,16 @@ class MCleaner:
         self.last_cleaned = 0
         self.last_size_mb = 0.0
         self.protected_count = 0
+
+    def center_window(self, width, height, parent=None):
+        """Center a window on the screen or relative to a parent window."""
+        win = parent if parent is not None else self.root
+        win.update_idletasks()
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        x = (screen_w - width) // 2
+        y = (screen_h - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
 
     def init_cpu_reader(self):
         try:
@@ -158,7 +177,7 @@ class MCleaner:
         sidebar.pack_propagate(False)
 
         ctk.CTkLabel(sidebar, text="MCleaner", font=("Segoe UI", 30, "bold")).pack(pady=(22, 5))
-        ctk.CTkLabel(sidebar, text="v0.7 • Author: MAF", font=("Segoe UI", 12)).pack(pady=(0, 12))
+        ctk.CTkLabel(sidebar, text=f"v{APP_VERSION} • Author: MAF", font=("Segoe UI", 12)).pack(pady=(0, 12))
 
         buttons = [
             ("⚡ Clean Everything", self.clean_all, 56),
@@ -614,6 +633,15 @@ class MCleaner:
         win.title("Scheduled Cleanup")
         win.geometry("400x560")
         win.resizable(False, False)
+        self.center_window(400, 560, parent=win)
+        win.transient(self.root)
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes("-topmost", True)
+            win.after(150, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
 
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
