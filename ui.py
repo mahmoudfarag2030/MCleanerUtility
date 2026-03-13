@@ -689,10 +689,23 @@ class MCleaner:
             win.after(150, lambda: win.attributes("-topmost", False))
         except Exception:
             pass
+
+        # Ensure the main UI is blocked while the speed test runs
+        self.set_busy(True)
         try:
             win.grab_set()
         except Exception:
             pass
+
+        def on_close():
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            self.set_busy(False)
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
 
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=16, pady=16)
@@ -711,11 +724,7 @@ class MCleaner:
                 prog.stop()
                 txt = f"Ping: {res['ping']} ms\nDownload: {res['download']} Mbps\nUpload: {res['upload']} Mbps"
                 messagebox.showinfo("Speed Test Results", txt)
-                try:
-                    win.grab_release()
-                except Exception:
-                    pass
-                win.destroy()
+                on_close()
 
             self.root.after(0, finish)
 
@@ -758,6 +767,23 @@ class MCleaner:
             win.after(150, lambda: win.attributes("-topmost", False))
         except Exception:
             pass
+
+        # Prevent interactions with the main window while scheduler is open
+        self.set_busy(True)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        def on_close():
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            self.set_busy(False)
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
 
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
