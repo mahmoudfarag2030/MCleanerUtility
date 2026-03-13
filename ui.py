@@ -219,7 +219,6 @@ class MCleaner:
             ("🚀 Startup Apps", self.show_startup_apps, 48),
             ("📡 Internet Speed Test", self.run_speed_test_ui, 48),
             ("🔧 Runtime checker", self.check_basic_tools, 48),
-            ("📄 Export Report", self.export_excel_report, 48),
         ]
 
         refs = []
@@ -397,6 +396,14 @@ class MCleaner:
             self.card_recoverable.configure(text=f"{self.last_size_mb:.2f} MB")
             self.card_protected.configure(text=f"{self.protected_count} files")
             self.progress.set(0)
+        except Exception:
+            pass
+
+    def set_progress(self, value: float):
+        """Update the progress bar (expects a value between 0 and 1)."""
+        try:
+            v = max(0.0, min(1.0, float(value)))
+            self.progress.set(v)
         except Exception:
             pass
 

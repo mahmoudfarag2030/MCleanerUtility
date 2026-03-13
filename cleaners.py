@@ -13,8 +13,9 @@ def clean_folder(folder, app=None, unlock=True):
     protected_count = 0
 
     files = [Path(r) / f for r, _, fs in os.walk(folder) for f in fs]
+    total_files = len(files)
 
-    for path in files:
+    for i, path in enumerate(files, start=1):
         try:
             stat = path.stat()
             size = stat.st_size
@@ -43,6 +44,13 @@ def clean_folder(folder, app=None, unlock=True):
             if app:
                 try:
                     app.root.after(0, lambda r=row: app.add_rows_batch([r]))
+                except Exception:
+                    pass
+
+            if app and total_files:
+                try:
+                    progress = i / total_files
+                    app.root.after(0, lambda p=progress: app.set_progress(p))
                 except Exception:
                     pass
 
