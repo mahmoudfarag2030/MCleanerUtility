@@ -45,7 +45,26 @@ def resource_path(relative_path):
 
 
 PREVIEW_SAMPLE_ROWS = 30
-APP_VERSION = "0.9"
+APP_VERSION = "0.9.0"
+
+
+def get_build_version():
+    """Return a short build identifier based on the current git commit (if available)."""
+    try:
+        import subprocess
+        from pathlib import Path
+
+        repo_dir = Path(__file__).resolve().parent
+        out = subprocess.check_output(
+            ["git", "describe", "--always", "--dirty"], cwd=repo_dir, stderr=subprocess.DEVNULL
+        )
+        return out.decode().strip()
+    except Exception:
+        return "unknown"
+
+
+BUILD_VERSION = get_build_version()
+
 CPU_READER_INIT_DELAY_MS = 500
 
 
@@ -83,7 +102,11 @@ class SplashScreen:
             footer = ctk.CTkFrame(self.root, fg_color="transparent")
             footer.pack(fill="x", side="bottom", pady=(6, 10))
 
-            ctk.CTkLabel(footer, text=f"v{APP_VERSION}", font=("Segoe UI", 11, "bold")).pack()
+            ctk.CTkLabel(
+                footer,
+                text=f"v{APP_VERSION} (build {BUILD_VERSION})",
+                font=("Segoe UI", 11, "bold"),
+            ).pack()
             ctk.CTkLabel(footer, text="Initializing cleanup engine...", font=("Segoe UI", 10)).pack()
         else:
             self.root.geometry("360x220")
@@ -118,7 +141,9 @@ class MCleaner:
         ctk.set_default_color_theme("dark-blue")
 
         self.root = root
-        self.root.title(f"MCleaner v{APP_VERSION} {'(Administrator)' if is_admin() else '(Standard Mode)'}")
+        self.root.title(
+            f"MCleaner v{APP_VERSION} (build {BUILD_VERSION}) {'(Administrator)' if is_admin() else '(Standard Mode)'}"
+        )
         self.root.geometry("1200x780")
         self.root.minsize(1080, 700)
         self.center_window(1200, 780)
@@ -177,7 +202,11 @@ class MCleaner:
         sidebar.pack_propagate(False)
 
         ctk.CTkLabel(sidebar, text="MCleaner", font=("Segoe UI", 30, "bold")).pack(pady=(22, 5))
-        ctk.CTkLabel(sidebar, text=f"v{APP_VERSION} • Author: MAF", font=("Segoe UI", 12)).pack(pady=(0, 12))
+        ctk.CTkLabel(
+            sidebar,
+            text=f"v{APP_VERSION} (build {BUILD_VERSION}) • Author: MAF",
+            font=("Segoe UI", 12),
+        ).pack(pady=(0, 12))
 
         buttons = [
             ("⚡ Clean Everything", self.clean_all, 56),
