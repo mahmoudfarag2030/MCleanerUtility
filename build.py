@@ -14,12 +14,25 @@ You can also pass additional pyinstaller args:
 import argparse
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
 CLEAN_PATHS = ["build", "dist", "__pycache__"]
-SPEC_FILES = ["MCleaner.spec", "main.spec"]
+SPEC_FILES = ["MCleaner.spec", "main.spec", "build_info.py"]
+
+def get_build_version() -> str:
+    """Return a short build identifier based on the current git commit (if available)."""
+    try:
+        out = subprocess.check_output(
+            ["git", "describe", "--always", "--dirty"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+        )
+        return out.decode().strip()
+    except Exception:
+        return "unknown"
 
 PYINSTALLER_DEFAULT_ARGS = [
     "--onefile",
@@ -27,6 +40,8 @@ PYINSTALLER_DEFAULT_ARGS = [
     "--icon=MCleaner.ico",
     "--add-data",
     "MCleaner.png;.",
+    "--add-data",
+    "build_info.py;.",
     "--collect-all",
     "customtkinter",
     "--name",
@@ -53,7 +68,13 @@ def clean():
 
 
 def run_pyinstaller(extra_args=None):
-    args = ["pyinstaller"] + PYINSTALLER_DEFAULT_ARGS
+    # Create build info file with current build version
+    build_version = get_build_version()
+    build_info_path = ROOT / "build_info.py"
+    build_info_path.write_text(f'BUILD_VERSION = "{build_version}"\n')
+
+    # Use the current Python interpreter to ensure we run PyInstaller from the active env.
+    args = [sys.executable, "-m", "PyInstaller"] + PYINSTALLER_DEFAULT_ARGS
     if extra_args:
         args.extend(extra_args)
 

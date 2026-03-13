@@ -23,7 +23,11 @@ def get_build_version() -> str:
         return "unknown"
 
 
-BUILD_VERSION = get_build_version()
+# Try to import build version from build_info.py (created during build)
+try:
+    from build_info import BUILD_VERSION
+except ImportError:
+    BUILD_VERSION = get_build_version()
 
 
 def resource_path(relative_path: str) -> str:
