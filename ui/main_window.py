@@ -1,138 +1,31 @@
+"""Main application window."""
+
+import ctypes
+import math
 import os
 import sys
 import threading
-import ctypes
-import time
-import math
-from pathlib import Path
 from collections import deque
-from datetime import datetime
-
-from cleaners import clean_folder, clean_browser_cache as run_browser_clean
+from pathlib import Path
 
 import customtkinter as ctk
 import psutil
-from openpyxl import Workbook
-from tkinter import ttk, messagebox, Canvas
-from PIL import Image
+from tkinter import Canvas, messagebox, ttk
 
+from cleaners import clean_folder, clean_browser_cache as run_browser_clean
 from installed_apps import get_installed_apps
-from helpers import is_admin, format_size, browser_running_improved
-from system_tools import CpuSpeedReader, check_basic_tools
-from startup_apps import get_startup_apps, toggle_startup_app
+from helpers import browser_running_improved, format_size, is_admin
+from scheduler_manager import create_task, delete_task, task_exists
 from speed_test import run_speed_test
+from startup_apps import get_startup_apps, toggle_startup_app
+from system_tools import CpuSpeedReader, check_basic_tools
 
-
-try:
-    from scheduler_manager import create_task, delete_task, task_exists
-except Exception:
-    def create_task(*args, **kwargs):
-        return False, "Scheduler module unavailable"
-
-    def delete_task(*args, **kwargs):
-        return False, "Scheduler module unavailable"
-
-    def task_exists():
-        return False
-
-
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-
-PREVIEW_SAMPLE_ROWS = 30
-APP_VERSION = "0.9.0"
-
-
-def get_build_version():
-    """Return a short build identifier based on the current git commit (if available)."""
-    try:
-        import subprocess
-        from pathlib import Path
-
-        repo_dir = Path(__file__).resolve().parent
-        out = subprocess.check_output(
-            ["git", "describe", "--always", "--dirty"], cwd=repo_dir, stderr=subprocess.DEVNULL
-        )
-        return out.decode().strip()
-    except Exception:
-        return "unknown"
-
-
-BUILD_VERSION = get_build_version()
-
-CPU_READER_INIT_DELAY_MS = 500
-
-
-class SplashScreen:
-    def __init__(self, parent):
-        self.parent = parent
-        self.root = ctk.CTkToplevel(parent)
-        self.root.overrideredirect(True)
-        self.root.configure(fg_color="#101820")
-
-        try:
-            self.root.attributes("-topmost", True)
-        except Exception:
-            pass
-
-        img_full_path = resource_path("MCleaner.png")
-        img_path = Path(img_full_path)
-
-        if img_path.exists():
-            img = Image.open(img_path).convert("RGBA")
-            ratio = img.height / img.width
-            w, h = 360, int(360 * ratio)
-
-            self.image = ctk.CTkImage(light_image=img, dark_image=img, size=(w, h))
-            img_label = ctk.CTkLabel(self.root, image=self.image, text="")
-            img_label.pack(fill="both", expand=True)
-
-            screen_w = self.root.winfo_screenwidth()
-            screen_h = self.root.winfo_screenheight()
-            x = (screen_w - w) // 2
-            y = (screen_h - (h + 60)) // 2  # add extra space for status labels
-
-            self.root.geometry(f"{w}x{h+60}+{x}+{y}")
-
-            footer = ctk.CTkFrame(self.root, fg_color="transparent")
-            footer.pack(fill="x", side="bottom", pady=(6, 10))
-
-            ctk.CTkLabel(
-                footer,
-                text=f"v{APP_VERSION} (build {BUILD_VERSION})",
-                font=("Segoe UI", 11, "bold"),
-            ).pack()
-            ctk.CTkLabel(footer, text="Initializing cleanup engine...", font=("Segoe UI", 10)).pack()
-        else:
-            self.root.geometry("360x220")
-            ctk.CTkLabel(self.root, text="MCleaner", font=("Segoe UI", 26, "bold")).pack(expand=True)
-
-            ctk.CTkLabel(self.root, text=f"v{APP_VERSION}", font=("Segoe UI", 11, "bold")).pack(pady=(8, 2))
-            ctk.CTkLabel(self.root, text="Initializing cleanup engine...", font=("Segoe UI", 10)).pack()
-
-        self.root.attributes("-alpha", 0.0)
-        self.fade_in()
-        self.root.after(2200, self.close)
-
-    def fade_in(self):
-        try:
-            a = self.root.attributes("-alpha")
-            if a < 1:
-                self.root.attributes("-alpha", min(1, a + 0.08))
-                self.root.after(40, self.fade_in)
-        except Exception:
-            pass
-
-    def close(self):
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
+from .constants import (
+    APP_VERSION,
+    BUILD_VERSION,
+    CPU_READER_INIT_DELAY_MS,
+    PREVIEW_SAMPLE_ROWS,
+)
 
 
 class MCleaner:
@@ -201,7 +94,9 @@ class MCleaner:
         sidebar.pack(side="left", fill="y", padx=14, pady=14)
         sidebar.pack_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="MCleaner", font=("Segoe UI", 30, "bold")).pack(pady=(22, 5))
+        ctk.CTkLabel(sidebar, text="MCleaner", font=("Segoe UI", 30, "bold")).pack(
+            pady=(22, 5)
+        )
         ctk.CTkLabel(
             sidebar,
             text=f"v{APP_VERSION} (build {BUILD_VERSION}) • Author: MAF",
@@ -231,7 +126,7 @@ class MCleaner:
                 corner_radius=16 if h == 56 else 14,
                 fg_color="#1f2937",
                 hover_color="#2b6ef6",
-                command=cmd
+                command=cmd,
             )
             btn.pack(fill="x", padx=14, pady=6)
             refs.append(btn)
@@ -254,7 +149,9 @@ class MCleaner:
 
         self.card_recoverable = self.make_stat_badge(stats, "Recoverable", "   0.00 MB")
         self.card_deleted = self.make_stat_badge(stats, "Deleted", "0 files")
-        self.card_protected = self.make_stat_badge(stats, "Permission Needed", "0 files")
+        self.card_protected = self.make_stat_badge(
+            stats, "Permission Needed", "0 files"
+        )
 
         self.progress = ctk.CTkProgressBar(content)
         self.progress.pack(fill="x", padx=10, pady=10)
@@ -269,17 +166,27 @@ class MCleaner:
         except Exception:
             pass
 
-        style.configure("Treeview", background="#111827", foreground="white", fieldbackground="#111827", rowheight=30)
+        style.configure(
+            "Treeview",
+            background="#111827",
+            foreground="white",
+            fieldbackground="#111827",
+            rowheight=30,
+        )
         style.configure("Treeview.Heading", background="#1f2937", foreground="white")
         style.map("Treeview", background=[("selected", "#2563eb")])
 
-        self.table = ttk.Treeview(table_frame, columns=("file", "size", "status"), show="headings")
+        self.table = ttk.Treeview(
+            table_frame, columns=("file", "size", "status"), show="headings"
+        )
 
         for col, width in zip(("file", "size", "status"), (560, 130, 240)):
             self.table.heading(col, text=col.title())
             self.table.column(col, width=width)
 
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.table.yview)
+        scrollbar = ttk.Scrollbar(
+            table_frame, orient="vertical", command=self.table.yview
+        )
         self.table.configure(yscroll=scrollbar.set)
 
         self.table.pack(side="left", fill="both", expand=True)
@@ -290,7 +197,9 @@ class MCleaner:
         frame.pack(side="left", fill="both", expand=True, padx=5)
         frame.pack_propagate(False)
 
-        ctk.CTkLabel(frame, text=title, font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        ctk.CTkLabel(frame, text=title, font=("Segoe UI", 11, "bold")).pack(
+            anchor="w", padx=10, pady=(8, 2)
+        )
         value = ctk.CTkLabel(frame, text="0", font=("Segoe UI", 13))
         value.pack(anchor="w", padx=10)
 
@@ -354,15 +263,23 @@ class MCleaner:
             cpu = psutil.cpu_percent()
             ram = psutil.virtual_memory()
             disk = psutil.disk_usage("C:\\")
-            ghz = self.cpu_reader.read() if self.cpu_reader and hasattr(self.cpu_reader, 'read') else 0
+            ghz = (
+                self.cpu_reader.read()
+                if self.cpu_reader and hasattr(self.cpu_reader, "read")
+                else 0
+            )
             cores = psutil.cpu_count(logical=True) or 0
 
             self.cpu_history.append(cpu)
             self.ram_history.append(ram.percent)
             self.disk_history.append(disk.percent)
 
-            self.cpu_card["value"].configure(text=f"{cpu:.0f}% {ghz:.2f} GHz / {cores} threads")
-            self.ram_card["value"].configure(text=f"{ram.used/(1024**3):.1f}/{ram.total/(1024**3):.1f} GB ({ram.percent:.0f}%)")
+            self.cpu_card["value"].configure(
+                text=f"{cpu:.0f}% {ghz:.2f} GHz / {cores} threads"
+            )
+            self.ram_card["value"].configure(
+                text=f"{ram.used/(1024**3):.1f}/{ram.total/(1024**3):.1f} GB ({ram.percent:.0f}%)"
+            )
             self.disk_card["value"].configure(text=f"{disk.percent:.0f}% used")
 
             for card, hist in (
@@ -445,17 +362,34 @@ class MCleaner:
         self.preview_ready[key] = not self.preview_ready.get(key, False)
 
     def handle_temp_button(self):
-        self.toggle_preview_clean("temp", Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp", self.temp_button, "🧹 Preview Windows Temp", "🧹 Clean Windows Temp")
+        self.toggle_preview_clean(
+            "temp",
+            Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
+            self.temp_button,
+            "🧹 Preview Windows Temp",
+            "🧹 Clean Windows Temp",
+        )
 
     def handle_user_temp_button(self):
-        self.toggle_preview_clean("user_temp", Path(os.path.expandvars(r"%temp%")), self.user_temp_button, "🧹 Preview User Temp", "🧹 Clean User Temp")
+        self.toggle_preview_clean(
+            "user_temp",
+            Path(os.path.expandvars(r"%temp%")),
+            self.user_temp_button,
+            "🧹 Preview User Temp",
+            "🧹 Clean User Temp",
+        )
 
     def confirm_and_clean(self, folder):
         if self.busy:
-            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            messagebox.showinfo(
+                "Busy", "Another operation is in progress. Please wait."
+            )
             return
 
-        if not messagebox.askyesno("Confirm Cleanup", f"Remove files in:\n{folder}\n\nContinue?"):
+        if not messagebox.askyesno(
+            "Confirm Cleanup",
+            f"Remove files in:\n{folder}\n\nContinue?",
+        ):
             return
 
         self.set_table_headers("File", "Size", "Status")
@@ -476,7 +410,10 @@ class MCleaner:
         self.clear_table()
 
         if browser_running_improved():
-            messagebox.showwarning("Browser Open", "Please close Chrome or Edge before cleaning browser cache.")
+            messagebox.showwarning(
+                "Browser Open",
+                "Please close Chrome or Edge before cleaning browser cache.",
+            )
             return
 
         self.reset_stats()
@@ -506,15 +443,19 @@ class MCleaner:
 
     def clean_all(self):
         if self.busy:
-            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            messagebox.showinfo(
+                "Busy", "Another operation is in progress. Please wait."
+            )
             return
 
         folders = [
             Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
-            Path(os.path.expandvars(r"%temp%"))
+            Path(os.path.expandvars(r"%temp%")),
         ]
 
-        if not messagebox.askyesno("Confirm Full Cleanup", "Clean all temporary folders and recycle bin?"):
+        if not messagebox.askyesno(
+            "Confirm Full Cleanup", "Clean all temporary folders and recycle bin?"
+        ):
             return
 
         self.set_table_headers("File", "Size", "Status")
@@ -527,7 +468,12 @@ class MCleaner:
                 try:
                     clean_folder(folder, self, unlock=False)
                 except Exception as e:
-                    self.root.after(0, lambda ee=e: self.add_rows_batch([(str(folder), "-", f"Error: {ee}")]))
+                    self.root.after(
+                        0,
+                        lambda ee=e: self.add_rows_batch(
+                            [(str(folder), "-", f"Error: {ee}")]
+                        ),
+                    )
 
             try:
                 ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
@@ -551,7 +497,9 @@ class MCleaner:
 
     def show_startup_apps(self):
         if self.busy:
-            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            messagebox.showinfo(
+                "Busy", "Another operation is in progress. Please wait."
+            )
             return
 
         try:
@@ -591,14 +539,14 @@ class MCleaner:
 
                     enable = item[1].lower() == "disabled"
 
-                    result = toggle_startup_app(
-                        app_name,
-                        enable,
-                        registry_name=item[3]
-                    )
+                    result = toggle_startup_app(app_name, enable, registry_name=item[3])
 
                     ok = result[0] if isinstance(result, tuple) else bool(result)
-                    msg = result[1] if isinstance(result, tuple) and len(result) > 1 else None
+                    msg = (
+                        result[1]
+                        if isinstance(result, tuple) and len(result) > 1
+                        else None
+                    )
 
                     if ok:
                         self.show_startup_apps()
@@ -650,20 +598,6 @@ class MCleaner:
         except Exception as e:
             self.add_rows_batch([("Runtime Check", "-", f"Error: {e}")])
 
-    def export_excel_report(self):
-        fn = f"MCleaner_Report_{datetime.now():%Y-%m-%d_%H-%M-%S}.xlsx"
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Deleted Files", self.last_cleaned])
-        ws.append(["Recovered MB", f"{self.last_size_mb:.2f}"])
-        ws.append(["Permission Needed", self.protected_count])
-
-        try:
-            wb.save(fn)
-            self.add_rows_batch([(fn, "-", "Saved successfully")])
-        except Exception as e:
-            self.add_rows_batch([(fn, "-", f"Error: {e}")])
-
     def open_scheduler_window(self):
         win = ctk.CTkToplevel(self.root)
         win.title("Scheduled Cleanup")
@@ -682,28 +616,48 @@ class MCleaner:
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
 
-        ctk.CTkLabel(body, text="Automatic Cleanup Scheduler", font=("Segoe UI", 18, "bold")).pack(pady=(10, 20))
+        ctk.CTkLabel(
+            body, text="Automatic Cleanup Scheduler", font=("Segoe UI", 18, "bold")
+        ).pack(pady=(10, 20))
 
         mode = ctk.StringVar(value="Weekly")
 
         for option in ["Daily", "Weekly", "Monthly"]:
-            ctk.CTkRadioButton(body, text=option, variable=mode, value=option).pack(pady=8)
+            ctk.CTkRadioButton(body, text=option, variable=mode, value=option).pack(
+                pady=8
+            )
 
-        status_label = ctk.CTkLabel(body, text=f"Current: {'Active' if task_exists() else 'Not active'}")
+        status_label = ctk.CTkLabel(
+            body, text=f"Current: {'Active' if task_exists() else 'Not active'}"
+        )
         status_label.pack(pady=(18, 18))
 
         def create_schedule():
             ok, msg = create_task(sys.executable, mode.get())
             messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
-            status_label.configure(text=f"Current: {'Active' if task_exists() else 'Not active'}")
+            status_label.configure(
+                text=f"Current: {'Active' if task_exists() else 'Not active'}"
+            )
 
         def remove_schedule():
             ok, msg = delete_task()
             messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
-            status_label.configure(text=f"Current: {'Active' if task_exists() else 'Not active'}")
+            status_label.configure(
+                text=f"Current: {'Active' if task_exists() else 'Not active'}"
+            )
 
-        ctk.CTkButton(body, text="Create Schedule", width=260, height=44, command=create_schedule).pack(pady=(20, 12))
-        ctk.CTkButton(body, text="Remove Schedule", width=260, height=44, fg_color="#991b1b", hover_color="#b91c1c", command=remove_schedule).pack()
+        ctk.CTkButton(
+            body, text="Create Schedule", width=260, height=44, command=create_schedule
+        ).pack(pady=(20, 12))
+        ctk.CTkButton(
+            body,
+            text="Remove Schedule",
+            width=260,
+            height=44,
+            fg_color="#991b1b",
+            hover_color="#b91c1c",
+            command=remove_schedule,
+        ).pack()
 
     def set_busy(self, value):
         self.busy = value
@@ -713,47 +667,3 @@ class MCleaner:
                 w.configure(state=state)
             except Exception:
                 pass
-
-
-if __name__ == "__main__":
-    if "--run-silent" in sys.argv or "--run_silent" in sys.argv:
-        folders = [
-            Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
-            Path(os.path.expandvars(r"%temp%"))
-        ]
-
-        for folder in folders:
-            try:
-                clean_folder(folder, None)
-            except Exception as e:
-                print("Scheduled cleanup error for", folder, e)
-
-        try:
-            ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
-        except Exception:
-            pass
-
-        print("Scheduled cleanup finished")
-        sys.exit(0)
-
-    root = ctk.CTk()
-    root.withdraw()
-
-    app = MCleaner(root)
-
-    splash = None
-    try:
-        splash = SplashScreen(root)
-    except Exception:
-        pass
-
-    def show_main():
-        root.deiconify()
-        if splash:
-            try:
-                splash.close()
-            except Exception:
-                pass
-
-    root.after(2200, show_main)
-    root.mainloop()

@@ -107,7 +107,7 @@ def single_upload_burst():
         sent = 0
 
         while sent < len(payload):
-            chunk = payload[sent:sent + BUFFER_SIZE]
+            chunk = payload[sent : sent + BUFFER_SIZE]
             sent_now = s.send(chunk)
             if sent_now <= 0:
                 break

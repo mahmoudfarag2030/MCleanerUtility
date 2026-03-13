@@ -47,8 +47,14 @@ def get_disabled_status_map():
     status_map = {}
 
     locations = [
-        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+        ),
     ]
 
     for root, path in locations:
@@ -82,14 +88,16 @@ def read_registry_apps(root, path, source, status_map):
                 raw_name, _, _ = winreg.EnumValue(key, i)
                 clean = clean_display_name(raw_name)
 
-                apps.append({
-                    "display_name": clean,
-                    "registry_name": raw_name,
-                    "status": status_map.get(raw_name, "Enabled"),
-                    "source": source,
-                    "publisher": detect_publisher(clean),
-                    "impact": estimate_impact(clean)
-                })
+                apps.append(
+                    {
+                        "display_name": clean,
+                        "registry_name": raw_name,
+                        "status": status_map.get(raw_name, "Enabled"),
+                        "source": source,
+                        "publisher": detect_publisher(clean),
+                        "impact": estimate_impact(clean),
+                    }
+                )
 
             except Exception:
                 continue
@@ -103,7 +111,9 @@ def read_registry_apps(root, path, source, status_map):
 def read_startup_folder():
     apps = []
 
-    startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    startup = (
+        Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    )
     disabled = startup / "_Disabled"
 
     skip = {"desktop.ini", "thumbs.db"}
@@ -114,28 +124,32 @@ def read_startup_folder():
                 if item.name.lower() in skip or item.name == "_Disabled":
                     continue
 
-                apps.append({
-                    "display_name": item.name,
-                    "registry_name": item.name,
-                    "status": "Enabled",
-                    "source": "Startup Folder",
-                    "publisher": detect_publisher(item.name),
-                    "impact": estimate_impact(item.name)
-                })
+                apps.append(
+                    {
+                        "display_name": item.name,
+                        "registry_name": item.name,
+                        "status": "Enabled",
+                        "source": "Startup Folder",
+                        "publisher": detect_publisher(item.name),
+                        "impact": estimate_impact(item.name),
+                    }
+                )
 
         if disabled.exists():
             for item in disabled.iterdir():
                 if item.name.lower() in skip:
                     continue
 
-                apps.append({
-                    "display_name": item.name,
-                    "registry_name": item.name,
-                    "status": "Disabled",
-                    "source": "Startup Folder",
-                    "publisher": detect_publisher(item.name),
-                    "impact": estimate_impact(item.name)
-                })
+                apps.append(
+                    {
+                        "display_name": item.name,
+                        "registry_name": item.name,
+                        "status": "Disabled",
+                        "source": "Startup Folder",
+                        "publisher": detect_publisher(item.name),
+                        "impact": estimate_impact(item.name),
+                    }
+                )
 
     except Exception:
         pass
@@ -147,25 +161,36 @@ def get_startup_apps():
     apps = []
     status_map = get_disabled_status_map()
 
-    apps.extend(read_registry_apps(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", "HKCU Run", status_map))
-    apps.extend(read_registry_apps(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run", "HKLM Run", status_map))
+    apps.extend(
+        read_registry_apps(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            "HKCU Run",
+            status_map,
+        )
+    )
+    apps.extend(
+        read_registry_apps(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            "HKLM Run",
+            status_map,
+        )
+    )
     apps.extend(read_startup_folder())
 
     apps.sort(key=lambda x: x["display_name"].lower())
 
     return [
-        (
-            app["display_name"],
-            app["status"],
-            app["source"],
-            app["registry_name"]
-        )
+        (app["display_name"], app["status"], app["source"], app["registry_name"])
         for app in apps
     ]
 
 
 def toggle_startup_folder_item(app_name, enable=True):
-    startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    startup = (
+        Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    )
     disabled = startup / "_Disabled"
 
     source = disabled / app_name if enable else startup / app_name
@@ -186,11 +211,21 @@ def toggle_startup_folder_item(app_name, enable=True):
 
 def toggle_registry_startup(registry_name, enable=True):
     locations = [
-        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+        ),
     ]
 
-    value = b'\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' if enable else b'\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+    value = (
+        b"\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        if enable
+        else b"\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    )
 
     for root, path in locations:
         try:
@@ -208,7 +243,9 @@ def toggle_registry_startup(registry_name, enable=True):
 
 
 def toggle_startup_app(app_name, enable=True, registry_name=None):
-    startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    startup = (
+        Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    )
     disabled = startup / "_Disabled"
 
     if (startup / app_name).exists() or (disabled / app_name).exists():

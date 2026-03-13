@@ -6,12 +6,14 @@ from pathlib import Path
 
 try:
     import win32pdh
+
     PDH_AVAILABLE = True
 except Exception:
     win32pdh, PDH_AVAILABLE = None, False
 
 try:
     import win32com.client
+
     WMI_AVAILABLE = True
 except Exception:
     win32com, WMI_AVAILABLE = None, False
@@ -22,9 +24,18 @@ except Exception:
 # =========================================================
 def get_all_installed_names():
     roots = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ]
 
     found = []
@@ -63,7 +74,9 @@ class CpuSpeedReader:
 
         if WMI_AVAILABLE:
             try:
-                for cpu in win32com.client.GetObject("winmgmts:").InstancesOf("Win32_Processor"):
+                for cpu in win32com.client.GetObject("winmgmts:").InstancesOf(
+                    "Win32_Processor"
+                ):
                     self.max_mhz = float(getattr(cpu, "MaxClockSpeed", 0))
                     break
             except Exception:
@@ -74,7 +87,7 @@ class CpuSpeedReader:
                 self.pdh_query = win32pdh.OpenQuery()
                 self.pdh_counter = win32pdh.AddCounter(
                     self.pdh_query,
-                    r"\Processor Information(_Total)\% Processor Performance"
+                    r"\Processor Information(_Total)\% Processor Performance",
                 )
 
                 win32pdh.CollectQueryData(self.pdh_query)
@@ -90,8 +103,7 @@ class CpuSpeedReader:
                 win32pdh.CollectQueryData(self.pdh_query)
 
                 _, val = win32pdh.GetFormattedCounterValue(
-                    self.pdh_counter,
-                    win32pdh.PDH_FMT_DOUBLE
+                    self.pdh_counter, win32pdh.PDH_FMT_DOUBLE
                 )
 
                 return ((float(val) / 100) * self.max_mhz) / 1000 if self.max_mhz else 0
@@ -134,7 +146,7 @@ def check_basic_tools():
         "Visual C++ 2012",
         "Visual C++ 2010",
         "Visual C++ 2008",
-        "Visual C++ 2005"
+        "Visual C++ 2005",
     ]
 
     for version in vc_versions:
@@ -148,7 +160,7 @@ def check_basic_tools():
         ("DirectX Legacy DX9", sys32 / "d3dx9_43.dll"),
         ("DirectX Legacy DX10", sys32 / "d3dx10_43.dll"),
         ("DirectX Legacy DX11", sys32 / "d3dx11_43.dll"),
-        ("XInput 1.3", sys32 / "xinput1_3.dll")
+        ("XInput 1.3", sys32 / "xinput1_3.dll"),
     ]
 
     for name, file in dx_files:
@@ -164,52 +176,72 @@ def check_basic_tools():
     for name, found in dotnet_checks:
         results.append((name, "Installed" if found else "Missing", ""))
 
-    results.append((
-        "XNA Framework 4.0",
-        "Installed" if scan_uninstall("XNA Framework Redistributable 4.0", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "XNA Framework 4.0",
+            (
+                "Installed"
+                if scan_uninstall("XNA Framework Redistributable 4.0", installed)
+                else "Missing"
+            ),
+            "",
+        )
+    )
 
-    results.append((
-        "XNA Framework 3.1",
-        "Installed" if scan_uninstall("XNA Framework Redistributable 3.1", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "XNA Framework 3.1",
+            (
+                "Installed"
+                if scan_uninstall("XNA Framework Redistributable 3.1", installed)
+                else "Missing"
+            ),
+            "",
+        )
+    )
 
-    results.append((
-        "OpenAL",
-        "Installed" if file_exists(sys32 / "OpenAL32.dll") else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "OpenAL",
+            "Installed" if file_exists(sys32 / "OpenAL32.dll") else "Missing",
+            "",
+        )
+    )
 
-    results.append((
-        "Java Runtime 8",
-        "Installed" if scan_uninstall("Java", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "Java Runtime 8",
+            "Installed" if scan_uninstall("Java", installed) else "Missing",
+            "",
+        )
+    )
 
-    results.append((
-        "Steam",
-        "Installed" if scan_uninstall("Steam", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        ("Steam", "Installed" if scan_uninstall("Steam", installed) else "Missing", "")
+    )
 
-    results.append((
-        "Epic Games",
-        "Installed" if scan_uninstall("Epic", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "Epic Games",
+            "Installed" if scan_uninstall("Epic", installed) else "Missing",
+            "",
+        )
+    )
 
-    results.append((
-        "NVIDIA PhysX",
-        "Installed" if scan_uninstall("PhysX", installed) else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "NVIDIA PhysX",
+            "Installed" if scan_uninstall("PhysX", installed) else "Missing",
+            "",
+        )
+    )
 
-    results.append((
-        "Vulkan Runtime",
-        "Installed" if file_exists(sys32 / "vulkan-1.dll") else "Missing",
-        ""
-    ))
+    results.append(
+        (
+            "Vulkan Runtime",
+            "Installed" if file_exists(sys32 / "vulkan-1.dll") else "Missing",
+            "",
+        )
+    )
 
     return results

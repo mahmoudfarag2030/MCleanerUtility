@@ -12,7 +12,7 @@ from cleaners import clean_folder
 def run_silent_cleanup():
     folders = [
         Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
-        Path(os.path.expandvars(r"%temp%"))
+        Path(os.path.expandvars(r"%temp%")),
     ]
 
     for folder in folders:
@@ -40,7 +40,7 @@ def launch_gui():
     except Exception:
         splash = None
 
-    app = MCleaner(root)
+    _app = MCleaner(root)
 
     def show_main():
         root.deiconify()

@@ -31,7 +31,7 @@ def clean_folder(folder, app=None, unlock=True):
                 try:
                     path.unlink()
                     deleted_count += 1
-                    deleted_mb += size / (1024 ** 2)
+                    deleted_mb += size / (1024**2)
                     status = "Deleted"
 
                 except PermissionError:
@@ -79,12 +79,32 @@ def clean_folder(folder, app=None, unlock=True):
 
 def clean_browser_cache(app=None):
     browser_paths = [
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Cache")),
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Code Cache")),
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\GPUCache")),
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache")),
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Code Cache")),
-        Path(os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\GPUCache")),
+        Path(
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Cache")
+        ),
+        Path(
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Code Cache"
+            )
+        ),
+        Path(
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\GPUCache"
+            )
+        ),
+        Path(
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache")
+        ),
+        Path(
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Code Cache"
+            )
+        ),
+        Path(
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\GPUCache"
+            )
+        ),
     ]
 
     combined = {

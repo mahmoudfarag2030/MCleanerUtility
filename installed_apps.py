@@ -42,16 +42,16 @@ def get_installed_apps():
     locations = [
         (
             winreg.HKEY_LOCAL_MACHINE,
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
         (
             winreg.HKEY_CURRENT_USER,
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
         (
             winreg.HKEY_LOCAL_MACHINE,
-            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-        )
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ]
 
     all_apps = []
