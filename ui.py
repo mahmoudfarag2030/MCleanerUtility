@@ -7,18 +7,22 @@ import math
 from pathlib import Path
 from collections import deque
 from datetime import datetime
+
 from cleaners import clean_folder, clean_browser_cache as run_browser_clean
+
 import customtkinter as ctk
 import psutil
 from openpyxl import Workbook
 from tkinter import ttk, messagebox, Canvas
 from PIL import Image
+
 from installed_apps import get_installed_apps
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 from startup_apps import get_startup_apps, toggle_startup_app
 from speed_test import run_speed_test
-# Safe import: if scheduler_manager fails, app still runs and scheduler features return friendly errors.
+
+
 try:
     from scheduler_manager import create_task, delete_task, task_exists
 except Exception:
@@ -31,16 +35,14 @@ except Exception:
     def task_exists():
         return False
 
-# --- PYINSTALLER PATH FIX ---
+
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
-# ---------------------------
+
 
 PREVIEW_SAMPLE_ROWS = 30
 CPU_READER_INIT_DELAY_MS = 500
@@ -84,8 +86,6 @@ class SplashScreen:
 
         self.root.attributes("-alpha", 0.0)
         self.fade_in()
-
-        # auto close splash after startup delay
         self.root.after(2200, self.close)
 
     def fade_in(self):
@@ -123,7 +123,6 @@ class MCleaner:
         self.ram_history = deque([0] * 80, maxlen=80)
         self.disk_history = deque([0] * 80, maxlen=80)
 
-        # cumulative stats
         self.reset_stats()
         self._build_ui()
 
@@ -143,7 +142,6 @@ class MCleaner:
             self.cpu_reader = None
 
     def set_table_headers(self, h1="File", h2="Size", h3="Status"):
-        # keep using same underlying columns; only change displayed headings
         try:
             self.table.heading("file", text=h1)
             self.table.heading("size", text=h2)
@@ -191,7 +189,6 @@ class MCleaner:
             btn.pack(fill="x", padx=14, pady=6)
             refs.append(btn)
 
-        # store references to the main buttons so we can safely enable/disable them
         self.clean_everything_btn, self.temp_button, self.user_temp_button = refs[:3]
         self.sidebar_buttons = refs
 
@@ -224,6 +221,7 @@ class MCleaner:
             style.theme_use("clam")
         except Exception:
             pass
+
         style.configure("Treeview", background="#111827", foreground="white", fieldbackground="#111827", rowheight=30)
         style.configure("Treeview.Heading", background="#1f2937", foreground="white")
         style.map("Treeview", background=[("selected", "#2563eb")])
@@ -252,7 +250,6 @@ class MCleaner:
         graph = Canvas(frame, height=40, bg="#1a1a1a", highlightthickness=0)
         graph.pack(fill="x", padx=8, pady=5)
 
-        # create a minimal initial line
         line_id = graph.create_line(0, 20, 1, 20, fill=color, width=2, smooth=True)
 
         return {
@@ -276,7 +273,6 @@ class MCleaner:
     def draw_graph(self, canvas, data, color, line_id):
         try:
             canvas.update_idletasks()
-
             w = canvas.winfo_width()
             h = canvas.winfo_height()
 
@@ -299,7 +295,6 @@ class MCleaner:
         for i, (frame, _) in enumerate(self.badge_frames):
             factor = 1 + 0.05 * math.sin(phase + i)
             c = int(17 * factor)
-            # keep greenish-blue tone but subtly vary brightness
             try:
                 frame.configure(fg_color=f"#{c:02x}{24:02x}{39:02x}")
             except Exception:
@@ -329,20 +324,15 @@ class MCleaner:
                 (self.disk_card, self.disk_history),
             ):
                 self.draw_graph(card["graph"], hist, card["color"], card["line_id"])
-
         except Exception:
             pass
 
-        # schedule next update
-        try:
-            self.root.after(1000, self.update_dashboard)
-        except Exception:
-            pass
+        self.root.after(1000, self.update_dashboard)
 
     def add_rows_batch(self, rows):
         for r in rows:
             try:
-                self.table.insert("", "end", values=r)
+                self.table.insert("", "end", values=r[:3])
             except Exception:
                 pass
 
@@ -367,7 +357,6 @@ class MCleaner:
         self.clear_table()
 
         rows, total = [], 0
-        # walk a sample of files within the folder
         try:
             i = 0
             for root_dir, _, files in os.walk(folder):
@@ -388,52 +377,30 @@ class MCleaner:
             pass
 
         self.add_rows_batch(rows)
-        try:
-            self.card_recoverable.configure(text=f"{total/(1024**2):.2f} MB (sample)")
-        except Exception:
-            pass
+        self.card_recoverable.configure(text=f"{total/(1024**2):.2f} MB (sample)")
 
     def toggle_preview_clean(self, key, folder, button, preview_text, clean_text):
         if not self.preview_ready.get(key, False):
             self.preview_files(folder)
-            try:
-                button.configure(text=clean_text)
-            except Exception:
-                pass
+            button.configure(text=clean_text)
         else:
             self.confirm_and_clean(folder)
-            try:
-                button.configure(text=preview_text)
-            except Exception:
-                pass
+            button.configure(text=preview_text)
 
         self.preview_ready[key] = not self.preview_ready.get(key, False)
 
     def handle_temp_button(self):
-        self.toggle_preview_clean(
-            "temp",
-            Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
-            self.temp_button,
-            "🧹 Preview Windows Temp",
-            "🧹 Clean Windows Temp"
-        )
+        self.toggle_preview_clean("temp", Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp", self.temp_button, "🧹 Preview Windows Temp", "🧹 Clean Windows Temp")
 
     def handle_user_temp_button(self):
-        self.toggle_preview_clean(
-            "user_temp",
-            Path(os.path.expandvars(r"%temp%")),
-            self.user_temp_button,
-            "🧹 Preview User Temp",
-            "🧹 Clean User Temp"
-        )
+        self.toggle_preview_clean("user_temp", Path(os.path.expandvars(r"%temp%")), self.user_temp_button, "🧹 Preview User Temp", "🧹 Clean User Temp")
 
     def confirm_and_clean(self, folder):
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
             return
 
-        prompt = f"Remove files in:\n{folder}\n\nThis will attempt to delete temporary files. Continue?"
-        if not messagebox.askyesno("Confirm Cleanup", prompt):
+        if not messagebox.askyesno("Confirm Cleanup", f"Remove files in:\n{folder}\n\nContinue?"):
             return
 
         self.set_table_headers("File", "Size", "Status")
@@ -442,44 +409,20 @@ class MCleaner:
         self.set_busy(True)
 
         def worker():
-            prev_files = self.last_cleaned
-            prev_size = self.last_size_mb
-            prev_prot = self.protected_count
-
             try:
                 clean_folder(folder, self)
-            except Exception as e:
-                self.root.after(0, lambda: self.add_rows_batch([(str(folder), "-", f"Error: {e}")] ))
             finally:
-                d_files = max(0, self.last_cleaned - prev_files)
-                d_mb = max(0.0, self.last_size_mb - prev_size)
-                d_prot = max(0, self.protected_count - prev_prot)
-
-                def finish_ui():
-                    self.add_rows_batch([(str(folder), f"{d_files} files", f"Recovered {d_mb:.2f} MB • {d_prot} protected")])
-                    self.update_stats()
-                    self.set_busy(False)
-
-                self.root.after(0, finish_ui)
+                self.root.after(0, lambda: self.set_busy(False))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def clean_browser_cache(self):
-        # prepare UI
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
 
-        # if browser is running, warn and abort
-        try:
-            if browser_running_improved():
-                messagebox.showwarning(
-                    "Browser Open",
-                    "Please close Chrome or Edge before cleaning browser cache."
-                )
-                return
-        except Exception:
-            # if helper fails, continue with attempt
-            pass
+        if browser_running_improved():
+            messagebox.showwarning("Browser Open", "Please close Chrome or Edge before cleaning browser cache.")
+            return
 
         self.reset_stats()
         self.set_busy(True)
@@ -487,17 +430,8 @@ class MCleaner:
         def worker():
             try:
                 run_browser_clean(self)
-            except Exception as e:
-                try:
-                    self.root.after(0, lambda: self.add_rows_batch([("Browser Cache", "-", f"Error: {e}")] ))
-                except Exception:
-                    pass
             finally:
-                try:
-                    self.root.after(0, self.update_stats)
-                    self.root.after(0, lambda: self.set_busy(False))
-                except Exception:
-                    pass
+                self.root.after(0, lambda: self.set_busy(False))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -505,23 +439,12 @@ class MCleaner:
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
         self.set_busy(True)
+
         try:
-            before_files = self.last_cleaned
-            before_size = self.last_size_mb
-
             ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
-
-            recovered_files = max(0, self.last_cleaned - before_files)
-            recovered_mb = max(0.0, self.last_size_mb - before_size)
-            self.add_rows_batch([
-                ("Recycle Bin", "-", f"Emptied successfully • {recovered_mb:.2f} MB")
-            ])
-
+            self.add_rows_batch([("Recycle Bin", "-", "Emptied successfully")])
         except Exception as e:
-            self.add_rows_batch([
-                ("Recycle Bin", "-", f"Error: {e}")
-            ])
-
+            self.add_rows_batch([("Recycle Bin", "-", f"Error: {e}")])
         finally:
             self.update_stats()
             self.set_busy(False)
@@ -536,11 +459,7 @@ class MCleaner:
             Path(os.path.expandvars(r"%temp%"))
         ]
 
-        msg = "The following locations will be cleaned:\n\n"
-        msg += "\n".join(str(p) for p in folders)
-        msg += "\n\nRecycle Bin will also be emptied. This may delete files permanently. Continue?"
-
-        if not messagebox.askyesno("Confirm Full Cleanup", msg):
+        if not messagebox.askyesno("Confirm Full Cleanup", "Clean all temporary folders and recycle bin?"):
             return
 
         self.set_table_headers("File", "Size", "Status")
@@ -549,95 +468,37 @@ class MCleaner:
         self.set_busy(True)
 
         def worker():
-            total_before_files = self.last_cleaned
-            total_before_size = self.last_size_mb
-            total_before_prot = self.protected_count
-
             for folder in folders:
-                self.root.after(
-                    0,
-                    lambda f=folder: self.add_rows_batch([(str(f), "-", "Cleaning...")])
-                )
-
-                prev_files = self.last_cleaned
-                prev_size = self.last_size_mb
-                prev_prot = self.protected_count
-
                 try:
                     clean_folder(folder, self, unlock=False)
                 except Exception as e:
-                    self.root.after(
-                        0,
-                        lambda f=folder, ee=e: self.add_rows_batch([(str(f), "-", f"Error: {ee}")])
-                    )
-                    continue
-
-                d_files = max(0, self.last_cleaned - prev_files)
-                d_mb = max(0.0, self.last_size_mb - prev_size)
-                d_prot = max(0, self.protected_count - prev_prot)
-
-                self.root.after(
-                    0,
-                    lambda f=folder, df=d_files, dm=d_mb, dp=d_prot:
-                    self.add_rows_batch([
-                        (str(f), f"{df} files", f"Recovered {dm:.2f} MB • {dp} protected")
-                    ])
-                )
+                    self.root.after(0, lambda ee=e: self.add_rows_batch([(str(folder), "-", f"Error: {ee}")]))
 
             try:
                 ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
             except Exception:
                 pass
 
-            def final_summary():
-                total_files = self.last_cleaned - total_before_files
-                total_mb = self.last_size_mb - total_before_size
-                total_prot = self.protected_count - total_before_prot
-
-                self.add_rows_batch([
-                    ("Summary", f"{total_files} files", f"Recovered {total_mb:.2f} MB • {total_prot} protected")
-                ])
-
-                self.update_stats()
-                self.set_busy(False)
-
-            self.root.after(0, final_summary)
+            self.root.after(0, self.update_stats)
+            self.root.after(0, lambda: self.set_busy(False))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def show_installed_apps(self):
-        if self.busy:
-            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
-            return
-
         self.clear_table()
         self.set_table_headers("Application", "Version", "Publisher")
 
         try:
             apps = get_installed_apps()
-
-            if not apps:
-                self.add_rows_batch([("No applications found", "-", "-")])
-                return
-
-            self.add_rows_batch(apps)
-
+            self.add_rows_batch(apps if apps else [("No applications found", "-", "-")])
         except Exception as e:
             self.add_rows_batch([("Installed Apps", "-", f"Error: {e}")])
 
     def show_startup_apps(self):
-        """
-        Populate table with startup apps and bind double-click to toggle state.
-        Displays rows as (Application, Status, Source).
-        Double-clicking a row will attempt to enable/disable that startup entry
-        using toggle_startup_app(app_name, enable_bool) and refresh the list.
-        On failure, a clear modal messagebox will show the failure reason.
-        """
         if self.busy:
             messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
             return
 
-        # clear any previous double-click binding to avoid stacking handlers
         try:
             self.table.unbind("<Double-1>")
         except Exception:
@@ -653,183 +514,84 @@ class MCleaner:
                 self.add_rows_batch([("No startup apps found", "-", "-")])
                 return
 
-            # add rows returned by get_startup_apps (expected tuples: name, status, source)
-            self.add_rows_batch(apps)
+            visible_rows = [(a[0], a[1], a[2]) for a in apps]
+            self.add_rows_batch(visible_rows)
+
+            startup_map = {a[0]: a for a in apps}
 
             def toggle_selected(event):
                 try:
-                    # determine the item under the mouse pointer (more robust than selection)
                     row_id = self.table.identify_row(event.y)
                     if not row_id:
-                        # fallback to selection if identify fails
-                        sel = self.table.selection()
-                        if not sel:
-                            return
-                        row_id = sel[0]
+                        return
 
                     values = self.table.item(row_id).get("values", [])
-
-                    if not values or len(values) < 2:
+                    if not values:
                         return
 
                     app_name = values[0]
-                    status = values[1]
-                    source = values[2] if len(values) >= 3 else None
+                    item = startup_map.get(app_name)
+                    if not item:
+                        return
 
-                    # desired state: enable if currently "Disabled"
-                    enable = str(status).strip().lower() == "disabled"
+                    enable = item[1].lower() == "disabled"
 
-                    # call toggle; support functions that return bool or (ok,msg)
-                    try:
-                        result = toggle_startup_app(app_name, enable)
-                    except Exception as e:
-                        result = (False, str(e))
+                    result = toggle_startup_app(
+                        app_name,
+                        enable,
+                        registry_name=item[3]
+                    )
 
-                    ok = False
-                    msg = None
-
-                    if isinstance(result, tuple) and len(result) >= 2:
-                        ok, msg = bool(result[0]), str(result[1])
-                    else:
-                        ok = bool(result)
-                        msg = None
+                    ok = result[0] if isinstance(result, tuple) else bool(result)
+                    msg = result[1] if isinstance(result, tuple) and len(result) > 1 else None
 
                     if ok:
-                        # refresh view to show new state (keeps behavior simple and consistent)
                         self.show_startup_apps()
                     else:
-                        # Provide a helpful message to the user (modal popup)
-                        if not msg:
-                            if not is_admin():
-                                msg = "Requires Administrator Permission"
-                            else:
-                                msg = "Failed to modify startup (unknown reason)"
-                        # Show modal warning with details
-                        try:
-                            messagebox.showwarning("Startup Apps", f"{app_name}\n\n{msg}")
-                        except Exception:
-                            pass
+                        messagebox.showwarning("Startup Apps", msg or "Toggle failed")
 
                 except Exception as e:
-                    try:
-                        messagebox.showerror("Startup Apps", f"Toggle failed: {e}")
-                    except Exception:
-                        pass
+                    messagebox.showerror("Startup Apps", f"Toggle failed: {e}")
 
-            # bind double-click to toggle (uses event to find correct row)
-            try:
-                self.table.bind("<Double-1>", toggle_selected)
-            except Exception:
-                pass
+            self.table.bind("<Double-1>", toggle_selected)
 
         except Exception as e:
             self.add_rows_batch([("Startup Apps", "-", f"Error: {e}")])
 
     def run_speed_test_ui(self):
-        """
-        Open a small modal and run the imported run_speed_test() function
-        in a background thread. Displays results in a modal when finished.
-        This method keeps UI responsive and doesn't touch other unrelated code.
-        """
-        # create modal
         win = ctk.CTkToplevel(self.root)
         win.title("Speed Test")
-        try:
-            win.transient(self.root)
-            win.grab_set()
-            win.lift()
-            win.focus_force()
-            win.attributes("-topmost", True)
-            win.after(200, lambda: win.attributes("-topmost", False))
-        except Exception:
-            pass
-
-        # try center
-        try:
-            self.root.update_idletasks()
-            main_x = self.root.winfo_x()
-            main_y = self.root.winfo_y()
-            main_w = self.root.winfo_width()
-            main_h = self.root.winfo_height()
-            sx = main_x + (main_w // 2) - 200
-            sy = main_y + (main_h // 2) - 120
-            win.geometry(f"400x220+{sx}+{sy}")
-        except Exception:
-            pass
+        win.geometry("400x220")
 
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=16, pady=16)
 
-        lbl = ctk.CTkLabel(body, text="Running speed test...\nThis may take 30-60 seconds", anchor="center")
+        lbl = ctk.CTkLabel(body, text="Running speed test...")
         lbl.pack(pady=(8, 12))
 
         prog = ctk.CTkProgressBar(body, mode="indeterminate")
         prog.pack(fill="x", pady=(4, 12))
-        try:
-            prog.start()
-        except Exception:
-            pass
-
-        result_text = ctk.CTkLabel(body, text="", anchor="w", justify="left")
-        result_text.pack(fill="both", expand=True)
+        prog.start()
 
         def worker():
-            try:
-                res = run_speed_test()
-            except Exception as e:
-                res = ("__error__", str(e))
+            res = run_speed_test()
 
             def finish():
-                try:
-                    prog.stop()
-                except Exception:
-                    pass
+                prog.stop()
+                txt = f"Ping: {res['ping']} ms\nDownload: {res['download']} Mbps\nUpload: {res['upload']} Mbps"
+                messagebox.showinfo("Speed Test Results", txt)
+                win.destroy()
 
-                # keep the modal open briefly to show results then close on OK
-                if isinstance(res, dict):
-                    ping = res.get("ping") or res.get("latency") or res.get("ms") or "-"
-                    dl = res.get("download") or res.get("down") or res.get("dl") or "-"
-                    ul = res.get("upload") or res.get("up") or res.get("ul") or "-"
-                    txt = f"Ping: {ping}\nDownload: {dl}\nUpload: {ul}"
-                    try:
-                        messagebox.showinfo("Speed Test Results", txt)
-                    except Exception:
-                        pass
-                elif isinstance(res, tuple) and len(res) >= 2 and res[0] == "__error__":
-                    try:
-                        messagebox.showerror("Speed Test Error", f"{res[1]}")
-                    except Exception:
-                        pass
-                else:
-                    # fallback: show repr
-                    try:
-                        messagebox.showinfo("Speed Test", str(res))
-                    except Exception:
-                        pass
-
-                try:
-                    win.grab_release()
-                except Exception:
-                    pass
-                try:
-                    win.destroy()
-                except Exception:
-                    pass
-
-            # schedule UI update on main thread
             self.root.after(0, finish)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def check_basic_tools(self):
-        if self.busy:
-            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
-            return
         self.clear_table()
         self.set_table_headers("Tool", "Status", "Notes")
+
         try:
-            results = check_basic_tools()
-            self.add_rows_batch(results)
+            self.add_rows_batch(check_basic_tools())
         except Exception as e:
             self.add_rows_batch([("Runtime Check", "-", f"Error: {e}")])
 
@@ -840,6 +602,7 @@ class MCleaner:
         ws.append(["Deleted Files", self.last_cleaned])
         ws.append(["Recovered MB", f"{self.last_size_mb:.2f}"])
         ws.append(["Permission Needed", self.protected_count])
+
         try:
             wb.save(fn)
             self.add_rows_batch([(fn, "-", "Saved successfully")])
@@ -847,124 +610,36 @@ class MCleaner:
             self.add_rows_batch([(fn, "-", f"Error: {e}")])
 
     def open_scheduler_window(self):
-        """
-        DPI-safe, centered scheduler window.
-        Reserves a dedicated bottom area for buttons so they never get clipped.
-        """
         win = ctk.CTkToplevel(self.root)
         win.title("Scheduled Cleanup")
-
-        # Increased geometry to avoid clipping at higher DPI
         win.geometry("400x560")
         win.resizable(False, False)
 
-        # Make window modal and bring to front
-        try:
-            win.transient(self.root)
-            win.grab_set()
-            win.lift()
-            win.focus_force()
-            win.attributes("-topmost", True)
-            win.after(200, lambda: win.attributes("-topmost", False))
-        except Exception:
-            pass
-
-        # center over main window (best effort)
-        try:
-            self.root.update_idletasks()
-            main_x = self.root.winfo_x()
-            main_y = self.root.winfo_y()
-            main_w = self.root.winfo_width()
-            main_h = self.root.winfo_height()
-
-            sx = main_x + (main_w // 2) - 200
-            sy = main_y + (main_h // 2) - 280
-            win.geometry(f"400x560+{sx}+{sy}")
-        except Exception:
-            pass
-
-        # body frame with extra bottom padding
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
 
-        ctk.CTkLabel(
-            body,
-            text="Automatic Cleanup Scheduler",
-            font=("Segoe UI", 18, "bold")
-        ).pack(pady=(10, 20))
+        ctk.CTkLabel(body, text="Automatic Cleanup Scheduler", font=("Segoe UI", 18, "bold")).pack(pady=(10, 20))
 
         mode = ctk.StringVar(value="Weekly")
 
         for option in ["Daily", "Weekly", "Monthly"]:
-            ctk.CTkRadioButton(
-                body,
-                text=option,
-                variable=mode,
-                value=option
-            ).pack(pady=8)
+            ctk.CTkRadioButton(body, text=option, variable=mode, value=option).pack(pady=8)
 
-        status_text_var = ctk.StringVar(value="Active" if task_exists() else "Not active")
-        status_label = ctk.CTkLabel(body, text=f"Current: {status_text_var.get()}", font=("Segoe UI", 11))
+        status_label = ctk.CTkLabel(body, text=f"Current: {'Active' if task_exists() else 'Not active'}")
         status_label.pack(pady=(18, 18))
 
-        # Reserve fixed bottom area for buttons so they won't be clipped
-        button_frame = ctk.CTkFrame(body, fg_color="transparent", height=140)
-        button_frame.pack(fill="x", side="bottom", pady=(10, 6))
-        button_frame.pack_propagate(False)
-
-        def refresh_status():
-            status_text_var.set("Active" if task_exists() else "Not active")
-            status_label.configure(text=f"Current: {status_text_var.get()}")
-
         def create_schedule():
-            exe_path = sys.executable
-            ok, msg = create_task(exe_path, mode.get())
-            if ok:
-                messagebox.showinfo("Scheduler", msg)
-            else:
-                messagebox.showerror("Scheduler", msg)
-            refresh_status()
+            ok, msg = create_task(sys.executable, mode.get())
+            messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
+            status_label.configure(text=f"Current: {'Active' if task_exists() else 'Not active'}")
 
         def remove_schedule():
             ok, msg = delete_task()
-            if ok:
-                messagebox.showinfo("Scheduler", msg)
-            else:
-                messagebox.showerror("Scheduler", msg)
-            refresh_status()
+            messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
+            status_label.configure(text=f"Current: {'Active' if task_exists() else 'Not active'}")
 
-        # Create button (centered)
-        ctk.CTkButton(
-            button_frame,
-            text="Create Schedule",
-            width=260,
-            height=44,
-            command=create_schedule
-        ).pack(pady=(6, 12))
-
-        # Remove button (red) — guaranteed visible due to reserved frame height
-        ctk.CTkButton(
-            button_frame,
-            text="Remove Schedule",
-            width=260,
-            height=44,
-            fg_color="#991b1b",
-            hover_color="#b91c1c",
-            command=remove_schedule
-        ).pack(pady=(0, 6))
-
-        # Properly release modal state on close
-        def _on_close():
-            try:
-                win.grab_release()
-            except Exception:
-                pass
-            try:
-                win.destroy()
-            except Exception:
-                pass
-
-        win.protocol("WM_DELETE_WINDOW", _on_close)
+        ctk.CTkButton(body, text="Create Schedule", width=260, height=44, command=create_schedule).pack(pady=(20, 12))
+        ctk.CTkButton(body, text="Remove Schedule", width=260, height=44, fg_color="#991b1b", hover_color="#b91c1c", command=remove_schedule).pack()
 
     def set_busy(self, value):
         self.busy = value
@@ -977,7 +652,6 @@ class MCleaner:
 
 
 if __name__ == "__main__":
-    # If launched by Task Scheduler with the special flag, run silent cleanup and exit
     if "--run-silent" in sys.argv or "--run_silent" in sys.argv:
         folders = [
             Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
@@ -986,13 +660,10 @@ if __name__ == "__main__":
 
         for folder in folders:
             try:
-                # cleaners.clean_folder currently writes into an 'app' object.
-                # We call it best-effort — if it returns a dict (future improvement), we'll merge.
                 clean_folder(folder, None)
             except Exception as e:
                 print("Scheduled cleanup error for", folder, e)
 
-        # try empty recycle bin (best-effort)
         try:
             ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
         except Exception:
@@ -1003,7 +674,9 @@ if __name__ == "__main__":
 
     root = ctk.CTk()
     root.withdraw()
+
     app = MCleaner(root)
+
     splash = None
     try:
         splash = SplashScreen(root)

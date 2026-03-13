@@ -19,10 +19,8 @@ def estimate_impact(name):
 
     if any(x in n for x in heavy):
         return "High"
-
     if any(x in n for x in medium):
         return "Medium"
-
     return "Low"
 
 
@@ -31,23 +29,15 @@ def detect_publisher(name):
 
     if "adobe" in n:
         return "Adobe"
-
     if "steam" in n:
         return "Valve"
-
     if "discord" in n:
         return "Discord"
-
     if "riot" in n:
         return "Riot Games"
-
     if "realtek" in n:
         return "Realtek"
-
-    if "microsoft" in n or "edge" in n:
-        return "Microsoft"
-
-    if "onedrive" in n:
+    if "microsoft" in n or "edge" in n or "onedrive" in n:
         return "Microsoft"
 
     return "Unknown"
@@ -57,29 +47,20 @@ def get_disabled_status_map():
     status_map = {}
 
     locations = [
-        (
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-        ),
-        (
-            winreg.HKEY_LOCAL_MACHINE,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-        )
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
     ]
 
     for root, path in locations:
         try:
             key = winreg.OpenKey(root, path)
-
             count = winreg.QueryInfoKey(key)[1]
 
             for i in range(count):
                 try:
                     name, value, _ = winreg.EnumValue(key, i)
-
                     if isinstance(value, bytes) and len(value) > 0:
                         status_map[name] = "Disabled" if value[0] == 3 else "Enabled"
-
                 except Exception:
                     continue
 
@@ -94,22 +75,21 @@ def read_registry_apps(root, path, source, status_map):
 
     try:
         key = winreg.OpenKey(root, path)
-
         count = winreg.QueryInfoKey(key)[1]
 
         for i in range(count):
             try:
-                name, _, _ = winreg.EnumValue(key, i)
+                raw_name, _, _ = winreg.EnumValue(key, i)
+                clean = clean_display_name(raw_name)
 
-                clean = clean_display_name(name)
-
-                apps.append((
-                    clean,
-                    status_map.get(name, "Enabled"),
-                    source,
-                    detect_publisher(clean),
-                    estimate_impact(clean)
-                ))
+                apps.append({
+                    "display_name": clean,
+                    "registry_name": raw_name,
+                    "status": status_map.get(raw_name, "Enabled"),
+                    "source": source,
+                    "publisher": detect_publisher(clean),
+                    "impact": estimate_impact(clean)
+                })
 
             except Exception:
                 continue
@@ -131,32 +111,31 @@ def read_startup_folder():
     try:
         if startup.exists():
             for item in startup.iterdir():
-                if item.name.lower() in skip:
+                if item.name.lower() in skip or item.name == "_Disabled":
                     continue
 
-                if item.name == "_Disabled":
-                    continue
-
-                apps.append((
-                    item.name,
-                    "Enabled",
-                    "Startup Folder",
-                    detect_publisher(item.name),
-                    estimate_impact(item.name)
-                ))
+                apps.append({
+                    "display_name": item.name,
+                    "registry_name": item.name,
+                    "status": "Enabled",
+                    "source": "Startup Folder",
+                    "publisher": detect_publisher(item.name),
+                    "impact": estimate_impact(item.name)
+                })
 
         if disabled.exists():
             for item in disabled.iterdir():
                 if item.name.lower() in skip:
                     continue
 
-                apps.append((
-                    item.name,
-                    "Disabled",
-                    "Startup Folder",
-                    detect_publisher(item.name),
-                    estimate_impact(item.name)
-                ))
+                apps.append({
+                    "display_name": item.name,
+                    "registry_name": item.name,
+                    "status": "Disabled",
+                    "source": "Startup Folder",
+                    "publisher": detect_publisher(item.name),
+                    "impact": estimate_impact(item.name)
+                })
 
     except Exception:
         pass
@@ -168,29 +147,21 @@ def get_startup_apps():
     apps = []
     status_map = get_disabled_status_map()
 
-    apps.extend(
-        read_registry_apps(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            "HKCU Run",
-            status_map
-        )
-    )
-
-    apps.extend(
-        read_registry_apps(
-            winreg.HKEY_LOCAL_MACHINE,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            "HKLM Run",
-            status_map
-        )
-    )
-
+    apps.extend(read_registry_apps(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", "HKCU Run", status_map))
+    apps.extend(read_registry_apps(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run", "HKLM Run", status_map))
     apps.extend(read_startup_folder())
 
-    apps.sort(key=lambda x: x[0].lower())
+    apps.sort(key=lambda x: x["display_name"].lower())
 
-    return apps
+    return [
+        (
+            app["display_name"],
+            app["status"],
+            app["source"],
+            app["registry_name"]
+        )
+        for app in apps
+    ]
 
 
 def toggle_startup_folder_item(app_name, enable=True):
@@ -213,28 +184,18 @@ def toggle_startup_folder_item(app_name, enable=True):
         return False, str(e)
 
 
-def toggle_registry_startup(app_name, enable=True):
+def toggle_registry_startup(registry_name, enable=True):
     locations = [
-        (
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-        ),
-        (
-            winreg.HKEY_LOCAL_MACHINE,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-        )
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
     ]
 
-    value = (
-        b'\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-        if enable else
-        b'\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-    )
+    value = b'\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' if enable else b'\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 
     for root, path in locations:
         try:
             key = winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE)
-            winreg.SetValueEx(key, app_name, 0, winreg.REG_BINARY, value)
+            winreg.SetValueEx(key, registry_name, 0, winreg.REG_BINARY, value)
             return True, "Registry updated"
 
         except PermissionError:
@@ -246,11 +207,11 @@ def toggle_registry_startup(app_name, enable=True):
     return False, "Startup entry not found"
 
 
-def toggle_startup_app(app_name, enable=True):
+def toggle_startup_app(app_name, enable=True, registry_name=None):
     startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
     disabled = startup / "_Disabled"
 
     if (startup / app_name).exists() or (disabled / app_name).exists():
         return toggle_startup_folder_item(app_name, enable)
 
-    return toggle_registry_startup(app_name, enable)
+    return toggle_registry_startup(registry_name or app_name, enable)
