@@ -680,6 +680,19 @@ class MCleaner:
         win = ctk.CTkToplevel(self.root)
         win.title("Speed Test")
         win.geometry("400x220")
+        self.center_window(400, 220, parent=win)
+        win.transient(self.root)
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes("-topmost", True)
+            win.after(150, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
+        try:
+            win.grab_set()
+        except Exception:
+            pass
 
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=16, pady=16)
@@ -698,6 +711,10 @@ class MCleaner:
                 prog.stop()
                 txt = f"Ping: {res['ping']} ms\nDownload: {res['download']} Mbps\nUpload: {res['upload']} Mbps"
                 messagebox.showinfo("Speed Test Results", txt)
+                try:
+                    win.grab_release()
+                except Exception:
+                    pass
                 win.destroy()
 
             self.root.after(0, finish)

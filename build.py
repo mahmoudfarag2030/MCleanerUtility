@@ -62,9 +62,14 @@ def run_pyinstaller(extra_args=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clean build artifacts and run PyInstaller.")
+    parser = argparse.ArgumentParser(
+        description="Clean build artifacts and run PyInstaller."
+    )
     parser.add_argument(
-        "--", dest="extra", nargs=argparse.REMAINDER, help="Extra args to pass to pyinstaller"
+        "--",
+        dest="extra",
+        nargs=argparse.REMAINDER,
+        help="Extra args to pass to pyinstaller",
     )
     parsed = parser.parse_args()
 

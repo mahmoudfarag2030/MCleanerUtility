@@ -5,3 +5,4 @@ openpyxl
 pyinstaller
 pytest
 ruff
+black
