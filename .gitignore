@@ -6,7 +6,8 @@ __pycache__/
 
 # PyInstaller
 build/
-dist/
+dist/*
+!dist/MCleaner.exe
 *.spec
 build_info.py
 
