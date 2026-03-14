@@ -146,6 +146,8 @@ class MCleaner:
         self.action_selected_id = None
         self.perf_cards = []
         self.stat_cards = []
+        self._resize_job = None
+        self._last_size = (0, 0)
 
         self.cpu_history = deque([0] * 80, maxlen=80)
         self.ram_history = deque([0] * 80, maxlen=80)
@@ -661,14 +663,30 @@ class MCleaner:
 
     def on_resize(self, event=None):
         try:
+            if self._resize_job:
+                self.root.after_cancel(self._resize_job)
+            self._resize_job = self.root.after(120, self._apply_resize)
+        except Exception:
+            pass
+
+    def _apply_resize(self):
+        try:
+            self._resize_job = None
             if not self.perf_cards and not self.stat_cards:
                 return
 
-            height = max(60, int(self.root.winfo_height() * 0.12 * 1.2))
+            w = self.root.winfo_width()
+            h = self.root.winfo_height()
+            if (w, h) == self._last_size:
+                return
+            self._last_size = (w, h)
+
+            height = max(60, int(h * 0.12 * 1.2))
+            graph_h = max(10, int(height * 0.2))
             for frame, graph in self.perf_cards:
                 try:
                     frame.configure(height=height)
-                    graph.configure(height=max(10, int(height * 0.2)))
+                    graph.configure(height=graph_h)
                 except Exception:
                     pass
 
