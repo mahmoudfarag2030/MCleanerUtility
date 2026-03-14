@@ -27,6 +27,10 @@ from .constants import (
     PREVIEW_SAMPLE_ROWS,
 )
 
+UI_DENSITY = 0.75
+WINDOW_HEIGHT_DENSITY = 0.7
+WINDOW_WIDTH_DENSITY = 0.85
+
 
 class MCleaner:
     def __init__(self, root):
@@ -37,9 +41,62 @@ class MCleaner:
         self.root.title(
             f"MCleaner v{APP_VERSION} (build {BUILD_VERSION}) {'(Administrator)' if is_admin() else '(Standard Mode)'}"
         )
-        self.root.geometry("1200x780")
-        self.root.minsize(1080, 700)
-        self.center_window(1200, 780)
+        
+        # Calculate responsive window size based on screen resolution
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        # Track UI scaling to compensate for high-DPI scaling (e.g., 125%, 150%).
+        # Some customtkinter versions lack get_widget_scaling; fall back safely.
+        scale = 1.0
+        if hasattr(ctk, "get_widget_scaling"):
+            try:
+                scale = float(ctk.get_widget_scaling()) or 1.0
+            except Exception:
+                scale = 1.0
+        elif hasattr(ctk, "get_scaling"):
+            try:
+                scale = float(ctk.get_scaling()) or 1.0
+            except Exception:
+                scale = 1.0
+
+        # Account for taskbar (approximately 50 pixels)
+        available_height = screen_height - 50
+
+        # Use 90% of available screen size, but cap at reasonable maximums
+        target_width = min(
+            int(screen_width * 0.9 * WINDOW_WIDTH_DENSITY),
+            int(1200 * WINDOW_WIDTH_DENSITY),
+        )
+        target_height = min(
+            int(available_height * 0.9 * WINDOW_HEIGHT_DENSITY),
+            int(780 * WINDOW_HEIGHT_DENSITY),
+        )
+
+        # Ensure minimum usable size
+        target_width = max(target_width, int(1080 * WINDOW_WIDTH_DENSITY))
+        target_height = max(target_height, int(700 * WINDOW_HEIGHT_DENSITY))
+
+        # If available screen is smaller than our minimum, use 95% of available size
+        if screen_width < 1080 or available_height < 700:
+            target_width = int(screen_width * 0.95 * WINDOW_WIDTH_DENSITY)
+            target_height = int(available_height * 0.95 * WINDOW_HEIGHT_DENSITY)
+
+        # Scale down on high-DPI displays to prevent overly large UI
+        target_width = max(int(target_width / scale), 640)
+        target_height = max(int(target_height / scale), 360)
+
+        min_width = max(int(1080 * WINDOW_WIDTH_DENSITY / scale), 640)
+        min_height = max(int(700 * WINDOW_HEIGHT_DENSITY / scale), 360)
+
+        self.root.geometry(f"{target_width}x{target_height}")
+        self.root.minsize(min_width, min_height)
+        self.center_window(target_width, target_height)
+
+        # Store values for responsive layouts
+        self.ui_scale = scale
+        self.window_width = target_width
+        self.window_height = target_height
 
         self.preview_ready = {"temp": False, "user_temp": False}
         self.badge_frames = []
@@ -68,8 +125,17 @@ class MCleaner:
         win.update_idletasks()
         screen_w = win.winfo_screenwidth()
         screen_h = win.winfo_screenheight()
+        
+        # Account for taskbar (typically 40-50 pixels at bottom)
+        # Use available height minus a margin for taskbar
+        available_h = screen_h - 50
+        
         x = (screen_w - width) // 2
-        y = (screen_h - height) // 2
+        y = (available_h - height) // 2
+        
+        # Ensure y is not negative (for very small screens)
+        y = max(0, y)
+        
         win.geometry(f"{width}x{height}+{x}+{y}")
 
     def init_cpu_reader(self):
@@ -90,31 +156,82 @@ class MCleaner:
         main = ctk.CTkFrame(self.root)
         main.pack(fill="both", expand=True)
 
-        sidebar = ctk.CTkFrame(main, width=260, corner_radius=20)
-        sidebar.pack(side="left", fill="y", padx=14, pady=14)
+        # Determine current effective window width (fallback to screen size)
+        win_width = getattr(self, "window_width", self.root.winfo_screenwidth())
+        scale = getattr(self, "ui_scale", 1.0)
+        small_screen = win_width <= 1366
+        density = UI_DENSITY
+
+        # Compact padding for smaller screens (reduces whitespace between elements)
+        outer_base = 10 if not small_screen else 6
+        inner_base = 6 if not small_screen else 4
+        button_padx_base = 12 if not small_screen else 10
+        button_pady_base = 5 if not small_screen else 4
+
+        outer_pad = max(2, int(outer_base * density / scale))
+        inner_pad = max(2, int(inner_base * density / scale))
+        button_padx = max(4, int(button_padx_base * density / scale))
+        button_pady = max(2, int(button_pady_base * density / scale))
+
+        # Calculate responsive sidebar width
+        if small_screen:
+            sidebar_width = max(180, min(240, int(win_width * 0.20)))
+        else:
+            sidebar_width = max(200, min(280, int(win_width * 0.22)))
+
+        sidebar = ctk.CTkFrame(main, width=sidebar_width, corner_radius=20)
+        sidebar.pack(side="left", fill="y", padx=outer_pad, pady=outer_pad)
         sidebar.pack_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="MCleaner", font=("Segoe UI", 30, "bold")).pack(
-            pady=(22, 5)
+        # Adjust font sizes and button heights for small screens and high-DPI scaling
+        base_title = 24 if small_screen else 30
+        base_version = 10 if small_screen else 12
+        base_button_main = 50 if small_screen else 56
+        base_button_secondary = 42 if small_screen else 48
+
+        title_font = ("Segoe UI", max(10, int(base_title / scale)), "bold")
+        version_font = ("Segoe UI", max(8, int(base_version / scale)))
+        button_main_height = max(24, int(base_button_main * density / scale))
+        button_secondary_height = max(22, int(base_button_secondary * density / scale))
+
+        ctk.CTkLabel(sidebar, text="MCleaner", font=title_font).pack(
+            pady=(max(4, int(18 * density / scale)), max(2, int(4 * density / scale)))
         )
         ctk.CTkLabel(
             sidebar,
             text=f"v{APP_VERSION} (build {BUILD_VERSION}) • Author: MAF",
-            font=("Segoe UI", 12),
-        ).pack(pady=(0, 12))
+            font=version_font,
+            wraplength=sidebar_width - 24,
+            justify="left",
+            anchor="w",
+        ).pack(pady=(0, max(3, int(10 * density / scale))))
 
-        buttons = [
-            ("⚡ Clean Everything", self.clean_all, 56),
-            ("🧹 Preview Windows Temp", self.handle_temp_button, 48),
-            ("🧹 Preview User Temp", self.handle_user_temp_button, 48),
-            ("🌐 Clean Browser Cache", self.clean_browser_cache, 48),
-            ("🗑 Empty Recycle Bin", self.clean_recycle_bin, 48),
-            ("⏰ Scheduled Cleanup", self.open_scheduler_window, 48),
-            ("📦 Installed Apps", self.show_installed_apps, 48),
-            ("🚀 Startup Apps", self.show_startup_apps, 48),
-            ("📡 Internet Speed Test", self.run_speed_test_ui, 48),
-            ("🔧 Runtime checker", self.check_basic_tools, 48),
-        ]
+        if small_screen:
+            buttons = [
+                ("⚡ Clean All", self.clean_all, button_main_height),
+                ("🧹 Preview Temp", self.handle_temp_button, button_secondary_height),
+                ("🧹 User Temp", self.handle_user_temp_button, button_secondary_height),
+                ("🌐 Clean Cache", self.clean_browser_cache, button_secondary_height),
+                ("🗑 Empty Bin", self.clean_recycle_bin, button_secondary_height),
+                ("⏰ Scheduler", self.open_scheduler_window, button_secondary_height),
+                ("📦 Installed", self.show_installed_apps, button_secondary_height),
+                ("🚀 Startup", self.show_startup_apps, button_secondary_height),
+                ("📡 Speed Test", self.run_speed_test_ui, button_secondary_height),
+                ("🔧 Runtime", self.check_basic_tools, button_secondary_height),
+            ]
+        else:
+            buttons = [
+                ("⚡ Clean Everything", self.clean_all, button_main_height),
+                ("🧹 Preview Windows Temp", self.handle_temp_button, button_secondary_height),
+                ("🧹 Preview User Temp", self.handle_user_temp_button, button_secondary_height),
+                ("🌐 Clean Browser Cache", self.clean_browser_cache, button_secondary_height),
+                ("🗑 Empty Recycle Bin", self.clean_recycle_bin, button_secondary_height),
+                ("⏰ Scheduled Cleanup", self.open_scheduler_window, button_secondary_height),
+                ("📦 Installed Apps", self.show_installed_apps, button_secondary_height),
+                ("🚀 Startup Apps", self.show_startup_apps, button_secondary_height),
+                ("📡 Internet Speed Test", self.run_speed_test_ui, button_secondary_height),
+                ("🔧 Runtime checker", self.check_basic_tools, button_secondary_height),
+            ]
 
         refs = []
         for text, cmd, h in buttons:
@@ -122,39 +239,111 @@ class MCleaner:
                 sidebar,
                 text=text,
                 height=h,
-                width=220,
-                corner_radius=16 if h == 56 else 14,
+                corner_radius=16 if h == button_main_height else 14,
                 fg_color="#1f2937",
                 hover_color="#2b6ef6",
                 command=cmd,
             )
-            btn.pack(fill="x", padx=14, pady=6)
+            btn.pack(fill="x", padx=button_padx, pady=button_pady)
             refs.append(btn)
 
         self.clean_everything_btn, self.temp_button, self.user_temp_button = refs[:3]
         self.sidebar_buttons = refs
 
         content = ctk.CTkFrame(main)
-        content.pack(side="right", fill="both", expand=True, padx=14, pady=14)
+        content.pack(
+            side="right",
+            fill="both",
+            expand=True,
+            padx=outer_pad,
+            pady=outer_pad,
+        )
+
+        # Determine sizes for performance cards and stat badges based on scale
+        perf_card_height = max(60, int(110 * density / scale))
+        stat_badge_height = max(38, int(70 * density / scale))
+        perf_title_font = ("Segoe UI", max(10, int(11 / scale)), "bold")
+        perf_value_font = ("Segoe UI", max(10, int(13 / scale)))
+        stat_title_font = ("Segoe UI", max(9, int(10 / scale)), "bold")
+        stat_value_font = ("Segoe UI", max(10, int(12 / scale)))
+
+        self.card_frame_padx = max(3, int(5 * density / scale))
+        self.card_label_padx = max(6, int(10 * density / scale))
+        self.card_label_pady = (
+            max(2, int(8 * density / scale)),
+            max(1, int(2 * density / scale)),
+        )
+        self.card_graph_padx = max(4, int(8 * density / scale))
+        self.card_graph_pady = max(2, int(5 * density / scale))
+        self.graph_height = max(18, int(40 * density / scale))
+
+        self.badge_padx = max(3, int(5 * density / scale))
+        self.badge_label_pady = (
+            max(2, int(8 * density / scale)),
+            max(1, int(2 * density / scale)),
+        )
 
         perf = ctk.CTkFrame(content, fg_color="transparent")
-        perf.pack(fill="x", pady=10)
+        perf.pack(fill="x", pady=inner_pad)
 
-        self.cpu_card = self.make_perf_card(perf, "CPU", "#3b82f6")
-        self.ram_card = self.make_perf_card(perf, "Memory", "#8b5cf6")
-        self.disk_card = self.make_perf_card(perf, "Disk", "#10b981")
+        self.cpu_card = self.make_perf_card(
+            perf,
+            "CPU",
+            "#3b82f6",
+            perf_card_height,
+            perf_title_font,
+            perf_value_font,
+            graph_height=self.graph_height,
+        )
+        self.ram_card = self.make_perf_card(
+            perf,
+            "Memory",
+            "#8b5cf6",
+            perf_card_height,
+            perf_title_font,
+            perf_value_font,
+            graph_height=self.graph_height,
+        )
+        self.disk_card = self.make_perf_card(
+            perf,
+            "Disk",
+            "#10b981",
+            perf_card_height,
+            perf_title_font,
+            perf_value_font,
+            graph_height=self.graph_height,
+        )
 
         stats = ctk.CTkFrame(content, fg_color="transparent")
-        stats.pack(fill="x", pady=8)
+        stats.pack(fill="x", pady=inner_pad)
 
-        self.card_recoverable = self.make_stat_badge(stats, "Recoverable", "   0.00 MB")
-        self.card_deleted = self.make_stat_badge(stats, "Deleted", "0 files")
+        self.card_recoverable = self.make_stat_badge(
+            stats,
+            "Recoverable",
+            "   0.00 MB",
+            stat_badge_height,
+            stat_title_font,
+            stat_value_font,
+        )
+        self.card_deleted = self.make_stat_badge(
+            stats,
+            "Deleted",
+            "0 files",
+            stat_badge_height,
+            stat_title_font,
+            stat_value_font,
+        )
         self.card_protected = self.make_stat_badge(
-            stats, "Permission Needed", "0 files"
+            stats,
+            "Permission Needed",
+            "0 files",
+            stat_badge_height,
+            stat_title_font,
+            stat_value_font,
         )
 
         self.progress = ctk.CTkProgressBar(content)
-        self.progress.pack(fill="x", padx=10, pady=10)
+        self.progress.pack(fill="x", padx=inner_pad, pady=inner_pad)
         self.progress.set(0)
 
         table_frame = ctk.CTkFrame(content)
@@ -166,23 +355,63 @@ class MCleaner:
         except Exception:
             pass
 
+        row_height = max(14, int(30 * density / scale))
+        table_font = ("Segoe UI", max(9, int(10 / scale)))
+        heading_font = ("Segoe UI", max(9, int(10 / scale)), "bold")
+
         style.configure(
             "Treeview",
             background="#111827",
             foreground="white",
             fieldbackground="#111827",
-            rowheight=30,
+            rowheight=row_height,
+            font=table_font,
         )
-        style.configure("Treeview.Heading", background="#1f2937", foreground="white")
+        style.configure(
+            "Treeview.Heading",
+            background="#1f2937",
+            foreground="white",
+            font=heading_font,
+        )
         style.map("Treeview", background=[("selected", "#2563eb")])
 
         self.table = ttk.Treeview(
             table_frame, columns=("file", "size", "status"), show="headings"
         )
 
-        for col, width in zip(("file", "size", "status"), (560, 130, 240)):
+        # Make table columns responsive to window size
+        def update_table_columns(event=None):
+            try:
+                table_width = self.table.winfo_width()
+                if table_width > 100:  # Only update if table has been sized
+                    if small_screen:
+                        min_file, min_size, min_status = 150, 60, 100
+                    else:
+                        min_file, min_size, min_status = 200, 80, 120
+
+                    # Allocate space proportionally: file (55%), size (16%), status (29%)
+                    file_width = max(min_file, int(table_width * 0.55))
+                    size_width = max(min_size, int(table_width * 0.16))
+                    status_width = max(min_status, table_width - file_width - size_width)
+
+                    self.table.column("file", width=file_width)
+                    self.table.column("size", width=size_width)
+                    self.table.column("status", width=status_width)
+            except Exception:
+                pass
+
+        self.table.bind("<Configure>", update_table_columns)
+
+        # Set initial column widths (will be updated after layout)
+        initial_widths = {
+            "file": 200 if not small_screen else 150,
+            "size": 80 if not small_screen else 60,
+            "status": 120 if not small_screen else 100,
+        }
+
+        for col in ("file", "size", "status"):
             self.table.heading(col, text=col.title())
-            self.table.column(col, width=width)
+            self.table.column(col, width=initial_widths[col])
 
         scrollbar = ttk.Scrollbar(
             table_frame, orient="vertical", command=self.table.yview
@@ -192,21 +421,43 @@ class MCleaner:
         self.table.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-    def make_perf_card(self, parent, title, color):
-        frame = ctk.CTkFrame(parent, height=110, corner_radius=16, width=1)
-        frame.pack(side="left", fill="both", expand=True, padx=5)
+    def make_perf_card(
+        self,
+        parent,
+        title,
+        color,
+        height=110,
+        title_font=("Segoe UI", 11, "bold"),
+        value_font=("Segoe UI", 13),
+        graph_height=40,
+    ):
+        frame = ctk.CTkFrame(parent, height=height, corner_radius=16, width=1)
+        frame.pack(
+            side="left",
+            fill="both",
+            expand=True,
+            padx=getattr(self, "card_frame_padx", 5),
+        )
         frame.pack_propagate(False)
 
-        ctk.CTkLabel(frame, text=title, font=("Segoe UI", 11, "bold")).pack(
-            anchor="w", padx=10, pady=(8, 2)
+        label_padx = getattr(self, "card_label_padx", 10)
+        label_pady = getattr(self, "card_label_pady", (8, 2))
+        graph_padx = getattr(self, "card_graph_padx", 8)
+        graph_pady = getattr(self, "card_graph_pady", 5)
+
+        ctk.CTkLabel(frame, text=title, font=title_font).pack(
+            anchor="w",
+            padx=label_padx,
+            pady=label_pady,
         )
-        value = ctk.CTkLabel(frame, text="0", font=("Segoe UI", 13))
-        value.pack(anchor="w", padx=10)
+        value = ctk.CTkLabel(frame, text="0", font=value_font)
+        value.pack(anchor="w", padx=label_padx)
 
-        graph = Canvas(frame, height=40, bg="#1a1a1a", highlightthickness=0)
-        graph.pack(fill="x", padx=8, pady=5)
+        graph = Canvas(frame, height=graph_height, bg="#1a1a1a", highlightthickness=0)
+        graph.pack(fill="x", padx=graph_padx, pady=graph_pady)
 
-        line_id = graph.create_line(0, 20, 1, 20, fill=color, width=2, smooth=True)
+        mid = max(1, int(graph_height / 2))
+        line_id = graph.create_line(0, mid, 1, mid, fill=color, width=2, smooth=True)
 
         return {
             "value": value,
@@ -215,12 +466,22 @@ class MCleaner:
             "line_id": line_id,
         }
 
-    def make_stat_badge(self, parent, title, value):
-        frame = ctk.CTkFrame(parent, height=70, corner_radius=18, fg_color="#111827")
-        frame.pack(side="left", fill="x", expand=True, padx=5)
+    def make_stat_badge(
+        self,
+        parent,
+        title,
+        value,
+        height=70,
+        title_font=("Segoe UI", 10, "bold"),
+        value_font=("Segoe UI", 12),
+    ):
+        frame = ctk.CTkFrame(parent, height=height, corner_radius=18, fg_color="#111827")
+        frame.pack(side="left", fill="x", expand=True, padx=getattr(self, "badge_padx", 5))
 
-        ctk.CTkLabel(frame, text=title, font=("Segoe UI", 10, "bold")).pack(pady=(8, 2))
-        val = ctk.CTkLabel(frame, text=value, font=("Segoe UI", 12))
+        ctk.CTkLabel(frame, text=title, font=title_font).pack(
+            pady=getattr(self, "badge_label_pady", (8, 2))
+        )
+        val = ctk.CTkLabel(frame, text=value, font=value_font)
         val.pack()
 
         self.badge_frames.append((frame, val))
@@ -562,10 +823,13 @@ class MCleaner:
             self.add_rows_batch([("Startup Apps", "-", f"Error: {e}")])
 
     def run_speed_test_ui(self):
+        density = UI_DENSITY
         win = ctk.CTkToplevel(self.root)
         win.title("Speed Test")
-        win.geometry("400x220")
-        self.center_window(400, 220, parent=win)
+        win_w = max(220, int(400 * density))
+        win_h = max(140, int(220 * density))
+        win.geometry(f"{win_w}x{win_h}")
+        self.center_window(win_w, win_h, parent=win)
         win.transient(self.root)
         win.lift()
         win.focus_force()
@@ -593,13 +857,13 @@ class MCleaner:
         win.protocol("WM_DELETE_WINDOW", on_close)
 
         body = ctk.CTkFrame(win, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=16, pady=16)
+        body.pack(fill="both", expand=True, padx=max(8, int(16 * density)), pady=max(8, int(16 * density)))
 
         lbl = ctk.CTkLabel(body, text="Running speed test...")
-        lbl.pack(pady=(8, 12))
+        lbl.pack(pady=(max(4, int(8 * density)), max(6, int(12 * density))))
 
         prog = ctk.CTkProgressBar(body, mode="indeterminate")
-        prog.pack(fill="x", pady=(4, 12))
+        prog.pack(fill="x", pady=(max(2, int(4 * density)), max(6, int(12 * density))))
         prog.start()
 
         def worker():
@@ -625,11 +889,14 @@ class MCleaner:
             self.add_rows_batch([("Runtime Check", "-", f"Error: {e}")])
 
     def open_scheduler_window(self):
+        density = UI_DENSITY
         win = ctk.CTkToplevel(self.root)
         win.title("Scheduled Cleanup")
-        win.geometry("400x560")
+        win_w = max(240, int(400 * density))
+        win_h = max(300, int(560 * density))
+        win.geometry(f"{win_w}x{win_h}")
         win.resizable(False, False)
-        self.center_window(400, 560, parent=win)
+        self.center_window(win_w, win_h, parent=win)
         win.transient(self.root)
         win.lift()
         win.focus_force()
@@ -640,23 +907,28 @@ class MCleaner:
             pass
 
         body = ctk.CTkFrame(win, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=25, pady=(20, 30))
+        body.pack(
+            fill="both",
+            expand=True,
+            padx=max(12, int(25 * density)),
+            pady=(max(10, int(20 * density)), max(14, int(30 * density))),
+        )
 
         ctk.CTkLabel(
             body, text="Automatic Cleanup Scheduler", font=("Segoe UI", 18, "bold")
-        ).pack(pady=(10, 20))
+        ).pack(pady=(max(6, int(10 * density)), max(10, int(20 * density))))
 
         mode = ctk.StringVar(value="Weekly")
 
         for option in ["Daily", "Weekly", "Monthly"]:
             ctk.CTkRadioButton(body, text=option, variable=mode, value=option).pack(
-                pady=8
+                pady=max(4, int(8 * density))
             )
 
         status_label = ctk.CTkLabel(
             body, text=f"Current: {'Active' if task_exists() else 'Not active'}"
         )
-        status_label.pack(pady=(18, 18))
+        status_label.pack(pady=(max(10, int(18 * density)), max(10, int(18 * density))))
 
         def create_schedule():
             ok, msg = create_task(sys.executable, mode.get())
@@ -672,14 +944,16 @@ class MCleaner:
                 text=f"Current: {'Active' if task_exists() else 'Not active'}"
             )
 
+        btn_w = max(180, int(260 * density))
+        btn_h = max(24, int(44 * density))
         ctk.CTkButton(
-            body, text="Create Schedule", width=260, height=44, command=create_schedule
-        ).pack(pady=(20, 12))
+            body, text="Create Schedule", width=btn_w, height=btn_h, command=create_schedule
+        ).pack(pady=(max(10, int(20 * density)), max(6, int(12 * density))))
         ctk.CTkButton(
             body,
             text="Remove Schedule",
-            width=260,
-            height=44,
+            width=btn_w,
+            height=btn_h,
             fg_color="#991b1b",
             hover_color="#b91c1c",
             command=remove_schedule,
