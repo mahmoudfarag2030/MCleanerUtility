@@ -26,7 +26,7 @@ def get_build_version() -> str:
     """Return a short build identifier based on the current git commit (if available)."""
     try:
         out = subprocess.check_output(
-            ["git", "describe", "--always", "--dirty"],
+            ["git", "describe", "--always"],
             cwd=ROOT,
             stderr=subprocess.DEVNULL,
         )

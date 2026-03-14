@@ -14,7 +14,7 @@ def get_build_version() -> str:
 
         repo_dir = Path(__file__).resolve().parent.parent
         out = subprocess.check_output(
-            ["git", "describe", "--always", "--dirty"],
+            ["git", "describe", "--always"],
             cwd=repo_dir,
             stderr=subprocess.DEVNULL,
         )
