@@ -7,15 +7,21 @@ import re
 import subprocess
 import sys
 import threading
+import winreg
+import tempfile
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 
 import customtkinter as ctk
 import psutil
-from tkinter import Canvas, messagebox, ttk
+from tkinter import Canvas, messagebox, ttk, filedialog
 
-from cleaners import clean_folder, clean_browser_cache as run_browser_clean
+from cleaners import (
+    clean_folder,
+    clean_browser_cache as run_browser_clean,
+    clean_junk_files as run_junk_clean,
+)
 from installed_apps import get_installed_apps_detailed
 from helpers import browser_running_improved, format_size, is_admin
 from scheduler_manager import create_task, delete_task, task_exists
@@ -148,6 +154,8 @@ class MCleaner:
         self.stat_cards = []
         self._resize_job = None
         self._last_size = (0, 0)
+        self.registry_issues = []
+        self.registry_issue_map = {}
 
         self.cpu_history = deque([0] * 80, maxlen=80)
         self.ram_history = deque([0] * 80, maxlen=80)
@@ -282,6 +290,7 @@ class MCleaner:
         btn_clean = nav_button("Clean All", self.clean_all, primary=True)
         btn_prev_temp = nav_button("Preview Windows Temp", self.handle_temp_button)
         btn_prev_user = nav_button("Preview User Temp", self.handle_user_temp_button)
+        nav_button("Junk File Cleaner", self.clean_junk_files)
         nav_button("Clean Browser Cache", self.clean_browser_cache)
         nav_button("Empty Recycle Bin", self.clean_recycle_bin)
         nav_button("Scheduled Cleanup", self.open_scheduler_window)
@@ -293,6 +302,7 @@ class MCleaner:
         add_section("Tools")
         nav_button("Internet Speed Test", self.run_speed_test_ui)
         nav_button("Runtime Checker", self.check_basic_tools)
+        nav_button("Registry Cleaner", self.open_registry_cleaner)
         # Export report removed per request
 
         self.clean_everything_btn = btn_clean
@@ -1038,6 +1048,32 @@ class MCleaner:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def clean_junk_files(self):
+        self.set_view(None)
+        self.set_table_headers("File", "Size", "Status")
+        self.clear_table()
+
+        if self.busy:
+            messagebox.showinfo("Busy", "Another operation is in progress. Please wait.")
+            return
+
+        if not messagebox.askyesno(
+            "Junk File Cleaner",
+            "Scan and remove temporary files, logs, caches, and leftover files?",
+        ):
+            return
+
+        self.reset_stats()
+        self.set_busy(True)
+
+        def worker():
+            try:
+                run_junk_clean(self)
+            finally:
+                self.root.after(0, lambda: self.set_busy(False))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def clean_recycle_bin(self):
         self.set_view(None)
         self.set_table_headers("File", "Size", "Status")
@@ -1085,6 +1121,16 @@ class MCleaner:
                             [(str(folder), "-", f"Error: {ee}")]
                         ),
                     )
+
+            try:
+                run_junk_clean(self)
+            except Exception:
+                pass
+
+            try:
+                run_browser_clean(self)
+            except Exception:
+                pass
 
             try:
                 ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1)
@@ -1377,3 +1423,360 @@ class MCleaner:
                 w.configure(state=state)
             except Exception:
                 pass
+
+    def open_registry_cleaner(self):
+        self.set_view("registry_cleaner")
+
+        win = ctk.CTkToplevel(self.root)
+        win.title("Registry Cleaner")
+        win_w = 700
+        win_h = 420
+        win.geometry(f"{win_w}x{win_h}")
+        self.center_window(win_w, win_h, parent=win)
+        win.transient(self.root)
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes("-topmost", True)
+            win.after(150, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
+
+        body = ctk.CTkFrame(win, fg_color=THEME["surface"], corner_radius=16)
+        body.pack(fill="both", expand=True, padx=12, pady=12)
+
+        toolbar = ctk.CTkFrame(body, fg_color="transparent")
+        toolbar.pack(fill="x", pady=(0, 8))
+        toolbar.grid_columnconfigure((0, 1, 2, 3, 4), weight=1, uniform="toolbar")
+
+        def scan():
+            self.scan_registry(win_tree)
+
+        def clean_selected():
+            self.clean_registry_items(win_tree, selected_only=True)
+
+        def clean_all():
+            self.clean_registry_items(win_tree, selected_only=False)
+
+        def backup_all():
+            self.backup_registry_items()
+
+        def restore_backup():
+            self.restore_registry_backup()
+
+        ctk.CTkButton(
+            toolbar,
+            text="Scan Registry",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["accent"],
+            hover_color=THEME["accent_hover"],
+            command=scan,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            toolbar,
+            text="Clean Selected",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=clean_selected,
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            toolbar,
+            text="Clean All",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=clean_all,
+        ).grid(row=0, column=2, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            toolbar,
+            text="Backup Keys",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=backup_all,
+        ).grid(row=0, column=3, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            toolbar,
+            text="Restore Backup",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=restore_backup,
+        ).grid(row=0, column=4, sticky="ew")
+
+        tree_frame = ctk.CTkFrame(body, fg_color="transparent")
+        tree_frame.pack(fill="both", expand=True)
+
+        win_tree = ttk.Treeview(
+            tree_frame,
+            columns=("issue", "location", "details"),
+            show="headings",
+        )
+        win_tree.heading("issue", text="Issue")
+        win_tree.heading("location", text="Registry Key")
+        win_tree.heading("details", text="Details")
+        win_tree.column("issue", width=160, anchor="w")
+        win_tree.column("location", width=280, anchor="w")
+        win_tree.column("details", width=220, anchor="w")
+        win_tree.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=win_tree.yview)
+        win_tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+
+        self.scan_registry(win_tree)
+
+    def scan_registry(self, tree):
+        self.registry_issues = []
+        self.registry_issue_map = {}
+        for item in tree.get_children():
+            tree.delete(item)
+
+        issues = []
+
+        def add_issue(root, key_path, value_name, value_data, reason):
+            issues.append(
+                {
+                    "root": root,
+                    "key": key_path,
+                    "value": value_name,
+                    "data": value_data,
+                    "reason": reason,
+                }
+            )
+
+        def extract_path(raw):
+            raw = (raw or "").strip()
+            if not raw:
+                return ""
+            if raw.startswith('"'):
+                parts = raw.split('"')
+                if len(parts) > 1:
+                    return parts[1]
+            for token in raw.split():
+                if token.lower().endswith((".exe", ".dll")) and ":" in token:
+                    return token.strip('"')
+            return raw
+
+        def check_key(root, path, values):
+            try:
+                with winreg.OpenKey(root, path) as k:
+                    for name in values:
+                        try:
+                            val, _ = winreg.QueryValueEx(k, name)
+                            p = extract_path(str(val))
+                            if p and ":" in p and not os.path.exists(p):
+                                add_issue(root, path, name, val, "Missing file")
+                        except FileNotFoundError:
+                            continue
+                        except OSError:
+                            continue
+            except OSError:
+                pass
+
+        def scan_run_keys():
+            run_keys = [
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
+            ]
+            for root, path in run_keys:
+                try:
+                    with winreg.OpenKey(root, path) as k:
+                        i = 0
+                        while True:
+                            try:
+                                name, val, _ = winreg.EnumValue(k, i)
+                                p = extract_path(str(val))
+                                if p and ":" in p and not os.path.exists(p):
+                                    add_issue(root, path, name, val, "Invalid startup path")
+                                i += 1
+                            except OSError:
+                                break
+                except OSError:
+                    continue
+
+        def scan_uninstall_keys():
+            uninstall_paths = [
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+            ]
+            for root, base in uninstall_paths:
+                try:
+                    with winreg.OpenKey(root, base) as root_key:
+                        i = 0
+                        while True:
+                            try:
+                                sub = winreg.EnumKey(root_key, i)
+                                sub_path = f"{base}\\{sub}"
+                                check_key(
+                                    root,
+                                    sub_path,
+                                    ["DisplayIcon", "UninstallString", "InstallLocation"],
+                                )
+                                i += 1
+                            except OSError:
+                                break
+                except OSError:
+                    continue
+
+        scan_run_keys()
+        scan_uninstall_keys()
+
+        self.registry_issues = issues
+        for idx, issue in enumerate(issues):
+            iid = f"reg{idx}"
+            display_root = "HKLM" if issue["root"] == winreg.HKEY_LOCAL_MACHINE else "HKCU"
+            loc = f"{display_root}\\{issue['key']}"
+            tree.insert("", "end", iid=iid, values=(issue["reason"], loc, issue["value"]))
+            self.registry_issue_map[iid] = issue
+
+        if not issues:
+            messagebox.showinfo("Registry Cleaner", "No issues found.")
+
+    def backup_registry_items(self):
+        if not self.registry_issues:
+            messagebox.showinfo("Registry Cleaner", "No issues to backup.")
+            return
+
+        desktop = Path(os.path.expandvars(r"%USERPROFILE%")) / "Desktop"
+        backup_dir = desktop / "registry_backups"
+        backup_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_dir / f"registry_backup_{timestamp}.reg"
+
+        key_sets = [
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+            "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+        ]
+
+        creation_flags = 0x08000000  # CREATE_NO_WINDOW
+
+        def export_key(key_name, out_path):
+            try:
+                subprocess.run(
+                    ["reg", "export", key_name, out_path, "/y"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=creation_flags,
+                )
+                return True
+            except Exception:
+                return False
+
+        header_written = False
+        temp_files = []
+        try:
+            for key_name in key_sets:
+                try:
+                    tmp = tempfile.NamedTemporaryFile(suffix=".reg", delete=False)
+                    tmp_path = tmp.name
+                    tmp.close()
+                    if export_key(key_name, tmp_path):
+                        temp_files.append(tmp_path)
+                except Exception:
+                    continue
+
+            with open(backup_file, "w", encoding="utf-16le") as out:
+                for tmp_path in temp_files:
+                    try:
+                        with open(tmp_path, "r", encoding="utf-16le") as inp:
+                            lines = inp.readlines()
+                        if not lines:
+                            continue
+                        if not header_written:
+                            out.write(lines[0])
+                            header_written = True
+                            start = 1
+                        else:
+                            start = 1 if "Windows Registry Editor" in lines[0] else 0
+                        out.writelines(lines[start:])
+                        out.write("\n")
+                    except Exception:
+                        continue
+        except Exception as e:
+            messagebox.showerror("Registry Cleaner", f"Backup failed: {e}")
+            return
+        finally:
+            for tmp_path in temp_files:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
+        messagebox.showinfo("Registry Cleaner", f"Backup complete: {backup_file.resolve()}")
+
+    def restore_registry_backup(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Registry Backup",
+            filetypes=[("Registry Files", "*.reg")],
+        )
+        if not file_path:
+            return
+        try:
+            subprocess.run(
+                ["reg", "import", file_path],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            messagebox.showinfo("Registry Cleaner", "Backup restored.")
+        except Exception as e:
+            messagebox.showerror("Registry Cleaner", f"Restore failed: {e}")
+
+    def clean_registry_items(self, tree, selected_only=False):
+        if not self.registry_issues:
+            messagebox.showinfo("Registry Cleaner", "No issues to clean.")
+            return
+
+        items = tree.selection() if selected_only else list(tree.get_children())
+        if not items:
+            messagebox.showinfo("Registry Cleaner", "No items selected.")
+            return
+
+        self.backup_registry_items()
+
+        cleaned = 0
+        for iid in items:
+            issue = self.registry_issue_map.get(iid)
+            if not issue:
+                continue
+            try:
+                with winreg.OpenKey(
+                    issue["root"],
+                    issue["key"],
+                    0,
+                    winreg.KEY_SET_VALUE,
+                ) as k:
+                    winreg.DeleteValue(k, issue["value"])
+                    cleaned += 1
+            except OSError:
+                continue
+
+        if cleaned:
+            messagebox.showinfo("Registry Cleaner", f"Cleaned {cleaned} entries.")
+        else:
+            messagebox.showinfo("Registry Cleaner", "No entries cleaned.")

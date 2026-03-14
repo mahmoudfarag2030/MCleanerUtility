@@ -131,3 +131,43 @@ def clean_browser_cache(app=None):
             pass
 
     return combined
+
+
+def clean_junk_files(app=None):
+    junk_paths = [
+        Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Temp",
+        Path(os.path.expandvars(r"%temp%")),
+        Path(os.path.expandvars(r"%LOCALAPPDATA%\\Temp")),
+        Path(os.path.expandvars(r"%LOCALAPPDATA%\\CrashDumps")),
+        Path(os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportQueue")),
+        Path(os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportArchive")),
+        Path(os.path.expandvars(r"%APPDATA%\\Microsoft\\Windows\\Recent")),
+        Path(os.path.expandvars(r"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer")),
+    ]
+
+    combined = {
+        "rows": [],
+        "deleted_count": 0,
+        "deleted_mb": 0.0,
+        "protected_count": 0,
+    }
+
+    for folder in junk_paths:
+        try:
+            if folder.exists():
+                result = clean_folder(folder, app=app, unlock=False)
+                combined["rows"].extend(result["rows"])
+                combined["deleted_count"] += result["deleted_count"]
+                combined["deleted_mb"] += result["deleted_mb"]
+                combined["protected_count"] += result["protected_count"]
+        except Exception:
+            continue
+
+    if app:
+        try:
+            app.root.after(0, app.update_stats)
+            app.root.after(0, lambda: app.set_busy(False))
+        except Exception:
+            pass
+
+    return combined

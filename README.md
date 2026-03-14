@@ -3,7 +3,9 @@
 MCleanerUtility is a lightweight Windows cleanup utility built with Python and CustomTkinter. It provides a simple, modern UI for:
 
 - cleaning temporary folders (system + user temp)
+- cleaning junk files (logs, caches, crash dumps, leftovers)
 - emptying the Recycle Bin
+- registry cleaner with backup/restore options
 - scheduling automatic cleanup via Task Scheduler
 - viewing installed apps and managing startup items
 - monitoring system performance (CPU/RAM/Disk)
