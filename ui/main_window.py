@@ -1,12 +1,14 @@
 """Main application window."""
 
 import ctypes
+import heapq
 import math
 import os
 import re
 import subprocess
 import sys
 import threading
+import time
 import winreg
 import tempfile
 from collections import deque
@@ -154,8 +156,13 @@ class MCleaner:
         self.stat_cards = []
         self._resize_job = None
         self._last_size = (0, 0)
+        self.sort_state = {}
+        self.table_base_headers = {"file": "File", "size": "Size", "status": "Status"}
         self.registry_issues = []
         self.registry_issue_map = {}
+        self.disk_analyzer_window = None
+        self.disk_analyzer_thread = None
+        self.disk_analyzer_stop = None
 
         self.cpu_history = deque([0] * 80, maxlen=80)
         self.ram_history = deque([0] * 80, maxlen=80)
@@ -198,6 +205,9 @@ class MCleaner:
             self.table.heading("status", text=h3)
             if self.action_table:
                 self.action_table.heading("action", text=h4 if h4 is not None else "")
+            self.table_base_headers = {"file": h1, "size": h2, "status": h3}
+            self.sort_state = {}
+            self.apply_table_sorting()
         except Exception:
             pass
 
@@ -286,7 +296,6 @@ class MCleaner:
             )
             return btn
 
-        add_section("Core")
         btn_clean = nav_button("Clean All", self.clean_all, primary=True)
         btn_prev_temp = nav_button("Preview Windows Temp", self.handle_temp_button)
         btn_prev_user = nav_button("Preview User Temp", self.handle_user_temp_button)
@@ -302,6 +311,7 @@ class MCleaner:
         add_section("Tools")
         nav_button("Internet Speed Test", self.run_speed_test_ui)
         nav_button("Runtime Checker", self.check_basic_tools)
+        nav_button("Disk Analyzer", self.open_disk_analyzer)
         nav_button("Registry Cleaner", self.open_registry_cleaner)
         # Export report removed per request
 
@@ -339,48 +349,78 @@ class MCleaner:
 
         # Export report removed per request
 
-        perf = ctk.CTkFrame(top, fg_color="transparent")
-        perf.pack(fill="x", pady=(0, max(1, int(section_gap * 0.5))))
+        cards = ctk.CTkFrame(top, fg_color="transparent")
+        cards.pack(fill="x", pady=(0, max(1, int(section_gap * 0.5))))
+        cards.grid_columnconfigure((0, 1, 2), weight=1, uniform="cards")
+        cards.grid_rowconfigure((0, 1), weight=1, uniform="cards")
+        self.cards_grid = cards
 
         perf_title_font = ui_font(11, "bold")
         perf_value_font = ui_font(13)
 
         self.cpu_card = self.make_perf_card(
-            perf, "CPU", THEME["accent"], perf_title_font, perf_value_font
+            cards,
+            "CPU",
+            THEME["accent"],
+            perf_title_font,
+            perf_value_font,
+            layout="grid",
+            row=0,
+            column=0,
         )
         self.ram_card = self.make_perf_card(
-            perf, "Memory", "#8b5cf6", perf_title_font, perf_value_font
+            cards,
+            "Memory",
+            "#8b5cf6",
+            perf_title_font,
+            perf_value_font,
+            layout="grid",
+            row=0,
+            column=1,
         )
         self.disk_card = self.make_perf_card(
-            perf, "Disk", "#22c55e", perf_title_font, perf_value_font
+            cards,
+            "Disk",
+            "#22c55e",
+            perf_title_font,
+            perf_value_font,
+            layout="grid",
+            row=0,
+            column=2,
         )
-
-        stats = ctk.CTkFrame(top, fg_color="transparent")
-        stats.pack(fill="x", pady=(0, max(1, int(section_gap * 0.5))))
 
         badge_title_font = ui_font(10, "bold")
         badge_value_font = ui_font(12)
 
         self.card_recoverable = self.make_stat_badge(
-            stats,
+            cards,
             "Recoverable",
             "0.00 MB",
             badge_title_font,
             badge_value_font,
+            layout="grid",
+            row=1,
+            column=0,
         )
         self.card_deleted = self.make_stat_badge(
-            stats,
+            cards,
             "Deleted",
             "0 files",
             badge_title_font,
             badge_value_font,
+            layout="grid",
+            row=1,
+            column=1,
         )
         self.card_protected = self.make_stat_badge(
-            stats,
+            cards,
             "Permission Needed",
             "0 files",
             badge_title_font,
             badge_value_font,
+            layout="grid",
+            row=1,
+            column=2,
         )
 
         self.progress = ctk.CTkProgressBar(
@@ -433,6 +473,14 @@ class MCleaner:
             font=heading_font,
             bordercolor=THEME["card_border"],
         )
+        style.map(
+            "Treeview.Heading",
+            background=[
+                ("active", THEME["table_header"]),
+                ("pressed", THEME["table_header"]),
+            ],
+            foreground=[("active", THEME["text"]), ("pressed", THEME["text"])],
+        )
         style.map("Treeview", background=[("selected", THEME["accent"])])
 
         list_frame = ctk.CTkFrame(table_frame, fg_color="transparent")
@@ -478,6 +526,7 @@ class MCleaner:
         for col in ("file", "size", "status"):
             self.table.heading(col, text=col.title())
             self.table.column(col, width=initial_widths[col])
+        self.apply_table_sorting()
 
         self.table.tag_configure("even", background=THEME["table_row"])
         self.table.tag_configure("odd", background=THEME["table_row_alt"])
@@ -497,6 +546,14 @@ class MCleaner:
             background=THEME["table_header"],
             foreground=THEME["text"],
             font=heading_font,
+        )
+        style.map(
+            "Action.Treeview.Heading",
+            background=[
+                ("active", THEME["table_header"]),
+                ("pressed", THEME["table_header"]),
+            ],
+            foreground=[("active", THEME["text"]), ("pressed", THEME["text"])],
         )
         style.map(action_style, background=[("selected", THEME["table_row"])])
 
@@ -573,17 +630,36 @@ class MCleaner:
         self.bind_table_scroll()
         self.show_action_column(False)
 
-    def make_perf_card(self, parent, title, color, title_font, value_font):
+    def make_perf_card(
+        self,
+        parent,
+        title,
+        color,
+        title_font,
+        value_font,
+        layout="pack",
+        row=0,
+        column=0,
+    ):
         card_gap = max(3, int(6 * UI_SCALE * CARD_GAP_MULT))
         frame = ctk.CTkFrame(
             parent,
-            corner_radius=max(6, int(16 * UI_SCALE)),
+            corner_radius=max(8, int(18 * UI_SCALE)),
             fg_color=THEME["card"],
             border_width=1,
             border_color=THEME["card_border"],
             height=64,
         )
-        frame.pack(side="left", fill="both", expand=True, padx=card_gap)
+        if layout == "grid":
+            frame.grid(
+                row=row,
+                column=column,
+                sticky="nsew",
+                padx=card_gap,
+                pady=card_gap,
+            )
+        else:
+            frame.pack(side="left", fill="both", expand=True, padx=card_gap)
         frame.pack_propagate(False)
 
         ctk.CTkLabel(
@@ -615,28 +691,65 @@ class MCleaner:
         self.perf_cards.append((frame, graph))
         return {"value": value, "graph": graph, "color": color, "line_id": line_id}
 
-    def make_stat_badge(self, parent, title, value, title_font, value_font):
+    def make_stat_badge(
+        self,
+        parent,
+        title,
+        value,
+        title_font,
+        value_font,
+        layout="pack",
+        row=0,
+        column=0,
+    ):
         card_gap = max(3, int(6 * UI_SCALE * CARD_GAP_MULT))
         frame = ctk.CTkFrame(
             parent,
-            corner_radius=max(6, int(16 * UI_SCALE)),
+            corner_radius=max(8, int(18 * UI_SCALE)),
             fg_color=THEME["card"],
             border_width=1,
             border_color=THEME["card_border"],
             height=64,
         )
-        frame.pack(side="left", fill="x", expand=True, padx=card_gap)
+        if layout == "grid":
+            frame.grid(
+                row=row,
+                column=column,
+                sticky="nsew",
+                padx=card_gap,
+                pady=card_gap,
+            )
+        else:
+            frame.pack(side="left", fill="both", expand=True, padx=card_gap)
         frame.pack_propagate(False)
 
-        ctk.CTkLabel(
-            frame, text=title, font=title_font, text_color=THEME["muted"]
-        ).pack(pady=(max(2, int(8 * UI_SCALE)), max(1, int(2 * UI_SCALE))))
-        val = ctk.CTkLabel(
-            frame, text=value, font=value_font, text_color=THEME["text"]
-        )
-        val.pack(pady=(0, max(2, int(8 * UI_SCALE))))
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
 
-        self.badge_frames.append((frame, val))
+        content = ctk.CTkFrame(frame, fg_color="transparent")
+        content.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        content.grid_rowconfigure(0, weight=1)
+        content.grid_rowconfigure(1, weight=1)
+        content.grid_columnconfigure(0, weight=1)
+
+        title_label = ctk.CTkLabel(
+            content,
+            text=title,
+            font=title_font,
+            text_color=THEME["muted"],
+            fg_color="transparent",
+        )
+        title_label.grid(row=0, column=0, sticky="nsew", pady=(0, 1))
+        val = ctk.CTkLabel(
+            content,
+            text=value,
+            font=value_font,
+            text_color=THEME["text"],
+            fg_color="transparent",
+        )
+        val.grid(row=1, column=0, sticky="nsew", pady=(0, 1))
+
+        self.badge_frames.append((frame, val, title_label))
         self.stat_cards.append(frame)
         return val
 
@@ -661,7 +774,8 @@ class MCleaner:
             pass
 
     def animate_badges(self, phase=0):
-        for i, (frame, _) in enumerate(self.badge_frames):
+        for i, badge in enumerate(self.badge_frames):
+            frame = badge[0]
             factor = 1 + 0.03 * math.sin(phase + i)
             base = 0x15
             c = int(base * factor)
@@ -700,11 +814,46 @@ class MCleaner:
                 except Exception:
                     pass
 
-            for frame in self.stat_cards:
+            target_height = height
+            if self.perf_cards:
                 try:
-                    frame.configure(height=height)
+                    self.perf_cards[0][0].update_idletasks()
+                    measured = self.perf_cards[0][0].winfo_height()
+                    if measured:
+                        target_height = max(target_height, measured)
                 except Exception:
                     pass
+
+            if hasattr(self, "perf_row") and self.perf_row:
+                try:
+                    self.perf_row.configure(height=target_height)
+                except Exception:
+                    pass
+            if hasattr(self, "stats_row") and self.stats_row:
+                try:
+                    self.stats_row.configure(height=target_height)
+                except Exception:
+                    pass
+
+            for frame in self.stat_cards:
+                try:
+                    frame.configure(height=target_height)
+                except Exception:
+                    pass
+
+            if self.badge_frames:
+                if target_height <= 58:
+                    title_size, value_size = 9, 10
+                elif target_height <= 68:
+                    title_size, value_size = 10, 12
+                else:
+                    title_size, value_size = 11, 13
+                for badge in self.badge_frames:
+                    try:
+                        badge[2].configure(font=ui_font(title_size, "bold"))
+                        badge[1].configure(font=ui_font(value_size))
+                    except Exception:
+                        pass
 
         except Exception:
             pass
@@ -778,6 +927,67 @@ class MCleaner:
                 self.action_table.heading("action", text="")
                 self.action_table.column("action", width=0, stretch=False)
                 self.action_frame.configure(width=0)
+        except Exception:
+            pass
+
+    def apply_table_sorting(self):
+        if not self.table:
+            return
+        self.update_table_sort_headers()
+
+    def update_table_sort_headers(self, active_col=None, reverse=False):
+        if not self.table:
+            return
+        for col in ("file", "size", "status"):
+            base = self.table_base_headers.get(col, col.title())
+            text = base
+            if active_col == col:
+                text = f"{base} {'▼' if reverse else '▲'}"
+            try:
+                self.table.heading(col, text=text, command=lambda c=col: self.sort_table(c))
+            except Exception:
+                pass
+
+    def _parse_size_value(self, value):
+        text = (value or "").strip().replace(",", "")
+        if not text:
+            return None
+        match = re.match(r"^([0-9]*\.?[0-9]+)\s*(B|KB|MB|GB)$", text, re.IGNORECASE)
+        if not match:
+            return None
+        num = float(match.group(1))
+        unit = match.group(2).upper()
+        scale = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}.get(unit, 1)
+        return num * scale
+
+    def _sort_key_for_column(self, col, value):
+        text = (value or "").strip()
+        if col == "size":
+            size_val = self._parse_size_value(text)
+            if size_val is not None:
+                return (0, size_val)
+            return (1, text.lower())
+        return (0, text.lower())
+
+    def sort_table(self, col):
+        try:
+            items = list(self.table.get_children())
+            reverse = self.sort_state.get(col, False)
+            items.sort(
+                key=lambda iid: self._sort_key_for_column(
+                    col, self.table.set(iid, col)
+                ),
+                reverse=reverse,
+            )
+            for index, iid in enumerate(items):
+                self.table.move(iid, "", index)
+                if self.action_table_visible and self.action_table:
+                    try:
+                        self.action_table.move(iid, "", index)
+                    except Exception:
+                        pass
+            self.sort_state[col] = not reverse
+            self.update_table_sort_headers(active_col=col, reverse=reverse)
         except Exception:
             pass
 
@@ -1335,6 +1545,481 @@ class MCleaner:
 
     # Export report removed per request
 
+    def get_drive_list(self):
+        try:
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            drives = []
+            for i in range(26):
+                if bitmask & (1 << i):
+                    drives.append(f"{chr(65 + i)}:\\")
+            return drives or [os.environ.get("SYSTEMDRIVE", "C:") + "\\"]
+        except Exception:
+            return [os.environ.get("SYSTEMDRIVE", "C:") + "\\"]
+
+    def scan_disk_usage(self, root_path, stop_event=None, progress_callback=None):
+        category_exts = {
+            "Pictures": {
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".gif",
+                ".bmp",
+                ".tiff",
+                ".tif",
+                ".webp",
+                ".heic",
+                ".raw",
+                ".psd",
+                ".svg",
+                ".ico",
+            },
+            "Music": {".mp3", ".wav", ".flac", ".aac", ".wma", ".ogg", ".m4a"},
+            "Video": {
+                ".mp4",
+                ".mkv",
+                ".avi",
+                ".mov",
+                ".wmv",
+                ".flv",
+                ".webm",
+                ".mpeg",
+                ".mpg",
+            },
+            "Documents": {
+                ".pdf",
+                ".doc",
+                ".docx",
+                ".xls",
+                ".xlsx",
+                ".ppt",
+                ".pptx",
+                ".txt",
+                ".rtf",
+                ".csv",
+                ".odt",
+                ".ods",
+                ".odp",
+                ".md",
+            },
+            "Archives": {
+                ".zip",
+                ".rar",
+                ".7z",
+                ".tar",
+                ".gz",
+                ".bz2",
+                ".xz",
+                ".iso",
+                ".cab",
+            },
+            "Executables": {".exe", ".msi", ".bat", ".cmd", ".com", ".ps1"},
+            "System": {".dll", ".sys", ".drv", ".ocx", ".cpl", ".mui"},
+        }
+        ext_category = {
+            ext: category
+            for category, exts in category_exts.items()
+            for ext in exts
+        }
+        categories = {name: {"size": 0, "count": 0} for name in category_exts}
+        categories["Other"] = {"size": 0, "count": 0}
+
+        total_size = 0
+        total_files = 0
+        max_files = 200
+        top_files = []
+        last_update = time.time()
+
+        root_path = os.path.abspath(root_path)
+        stack = [root_path]
+        while stack:
+            if stop_event and stop_event.is_set():
+                break
+            current = stack.pop()
+            try:
+                with os.scandir(current) as it:
+                    for entry in it:
+                        if stop_event and stop_event.is_set():
+                            break
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                stack.append(entry.path)
+                                continue
+                            if not entry.is_file(follow_symlinks=False):
+                                continue
+                            size = entry.stat(follow_symlinks=False).st_size
+                            total_size += size
+                            total_files += 1
+                            ext = os.path.splitext(entry.name)[1].lower()
+                            category = ext_category.get(ext, "Other")
+                            categories[category]["size"] += size
+                            categories[category]["count"] += 1
+
+                            if size > 0:
+                                if len(top_files) < max_files:
+                                    heapq.heappush(top_files, (size, entry.path))
+                                else:
+                                    if size > top_files[0][0]:
+                                        heapq.heapreplace(
+                                            top_files, (size, entry.path)
+                                        )
+                        except (PermissionError, FileNotFoundError, OSError):
+                            continue
+            except (PermissionError, FileNotFoundError, OSError):
+                continue
+
+            if progress_callback and time.time() - last_update > 0.35:
+                last_update = time.time()
+                try:
+                    progress_callback(total_files, total_size, current)
+                except Exception:
+                    pass
+
+        top_files.sort(key=lambda x: x[0], reverse=True)
+        return {
+            "categories": categories,
+            "total_size": total_size,
+            "total_files": total_files,
+            "top_files": top_files,
+        }
+
+    def open_disk_analyzer(self):
+        if self.disk_analyzer_window:
+            try:
+                self.disk_analyzer_window.lift()
+                self.disk_analyzer_window.focus_force()
+                return
+            except Exception:
+                self.disk_analyzer_window = None
+
+        win = ctk.CTkToplevel(self.root)
+        win.title("Disk Analyzer")
+        win_w = 780
+        win_h = 520
+        win.geometry(f"{win_w}x{win_h}")
+        self.center_window(win_w, win_h, parent=win)
+        win.transient(self.root)
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes("-topmost", True)
+            win.after(150, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
+
+        self.disk_analyzer_window = win
+        self.disk_analyzer_stop = threading.Event()
+
+        def on_close():
+            try:
+                self.disk_analyzer_stop.set()
+            except Exception:
+                pass
+            self.disk_analyzer_window = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+        body = ctk.CTkFrame(win, fg_color=THEME["surface"], corner_radius=16)
+        body.pack(fill="both", expand=True, padx=12, pady=12)
+
+        toolbar = ctk.CTkFrame(body, fg_color="transparent")
+        toolbar.pack(fill="x", pady=(0, 10))
+        toolbar.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+
+        drives = self.get_drive_list()
+        drive_var = ctk.StringVar(value=drives[0] if drives else "C:\\")
+        selected_path = {"path": drive_var.get(), "custom": False}
+
+        status_label = ctk.CTkLabel(
+            body,
+            text=f"Ready: {selected_path['path']}",
+            font=ui_font(10),
+            text_color=THEME["muted"],
+        )
+
+        ctk.CTkLabel(
+            toolbar, text="Drive:", font=ui_font(11, "bold"), text_color=THEME["text"]
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        def on_drive_change(value):
+            selected_path["path"] = value
+            selected_path["custom"] = False
+            status_label.configure(text=f"Ready: {value}")
+
+        drive_menu = ctk.CTkOptionMenu(
+            toolbar,
+            values=drives,
+            variable=drive_var,
+            fg_color=THEME["surface_alt"],
+            button_color=THEME["accent"],
+            button_hover_color=THEME["accent_hover"],
+            command=on_drive_change,
+        )
+        drive_menu.grid(row=0, column=1, sticky="w", padx=(0, 8))
+
+        def choose_folder():
+            path = filedialog.askdirectory(title="Select Folder to Analyze")
+            if path:
+                selected_path["path"] = path
+                selected_path["custom"] = True
+                try:
+                    drive_var.set(path)
+                except Exception:
+                    pass
+                status_label.configure(text=f"Ready: {path}")
+
+        ctk.CTkButton(
+            toolbar,
+            text="Select Folder",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=choose_folder,
+        ).grid(row=0, column=2, sticky="e", padx=(0, 8))
+
+        ctk.CTkButton(
+            toolbar,
+            text="Analyze",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["accent"],
+            hover_color=THEME["accent_hover"],
+            command=lambda: start_scan(),
+        ).grid(row=0, column=3, sticky="e", padx=(0, 8))
+
+        ctk.CTkButton(
+            toolbar,
+            text="Stop",
+            height=28,
+            corner_radius=8,
+            fg_color=THEME["surface_alt"],
+            hover_color="#1a2230",
+            border_width=1,
+            border_color=THEME["card_border"],
+            command=lambda: self.disk_analyzer_stop.set(),
+        ).grid(row=0, column=4, sticky="e")
+
+        status_label.pack(anchor="w", padx=4, pady=(0, 6))
+
+        progress = ctk.CTkProgressBar(
+            body,
+            mode="indeterminate",
+            height=10,
+            progress_color=THEME["accent"],
+        )
+        progress.pack(fill="x", padx=2, pady=(0, 10))
+
+        tabs = ctk.CTkTabview(body, fg_color=THEME["surface"], corner_radius=10)
+        tabs.pack(fill="both", expand=True)
+
+        summary_tab = tabs.add("Summary")
+        files_tab = tabs.add("Largest Files")
+
+        def build_tree(parent, columns, headings, widths):
+            tree = ttk.Treeview(parent, columns=columns, show="headings")
+            for col, head, width in zip(columns, headings, widths):
+                tree.heading(col, text=head)
+                tree.column(col, width=width, anchor="w")
+            tree.pack(side="left", fill="both", expand=True)
+            scroll = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+            tree.configure(yscroll=scroll.set)
+            scroll.pack(side="right", fill="y")
+            return tree
+
+        summary_tree = build_tree(
+            summary_tab,
+            ("category", "size", "files", "percent"),
+            ("Category", "Size", "Files", "Percent"),
+            (240, 140, 120, 120),
+        )
+        files_tree = build_tree(
+            files_tab,
+            ("file", "size", "folder"),
+            ("File", "Size", "Folder"),
+            (260, 120, 360),
+        )
+        files_tree_map = {}
+        summary_sort_state = {}
+        files_sort_state = {}
+        summary_headers = {
+            "category": "Category",
+            "size": "Size",
+            "files": "Files",
+            "percent": "Percent",
+        }
+        files_headers = {"file": "File", "size": "Size", "folder": "Folder"}
+
+        def open_file_location(path):
+            try:
+                norm = os.path.normpath(path)
+                subprocess.Popen(["explorer", "/select,", norm])
+            except Exception as e:
+                messagebox.showerror(
+                    "Disk Analyzer", f"Unable to open location: {e}"
+                )
+
+        def on_file_double_click(event):
+            row_id = files_tree.identify_row(event.y)
+            if not row_id:
+                return
+            path = files_tree_map.get(row_id)
+            if path:
+                open_file_location(path)
+
+        files_tree.bind("<Double-1>", on_file_double_click)
+
+        def clear_tree(tree):
+            for row in tree.get_children():
+                tree.delete(row)
+
+        def parse_size_text(text):
+            return self._parse_size_value(text)
+
+        def parse_percent_text(text):
+            text = (text or "").strip().replace("%", "")
+            try:
+                return float(text)
+            except Exception:
+                return None
+
+        def sort_tree(tree, col, sort_state):
+            try:
+                items = list(tree.get_children())
+                reverse = sort_state.get(col, False)
+
+                def key_fn(iid):
+                    value = tree.set(iid, col)
+                    if col == "size":
+                        parsed = parse_size_text(value)
+                        if parsed is not None:
+                            return (0, parsed)
+                    if col == "percent":
+                        parsed = parse_percent_text(value)
+                        if parsed is not None:
+                            return (0, parsed)
+                    if col == "files":
+                        try:
+                            return (0, int(str(value).replace(",", "")))
+                        except Exception:
+                            pass
+                    return (1, str(value).lower())
+
+                items.sort(key=key_fn, reverse=reverse)
+                for index, iid in enumerate(items):
+                    tree.move(iid, "", index)
+                sort_state[col] = not reverse
+                update_tree_headers(
+                    tree,
+                    summary_headers if tree is summary_tree else files_headers,
+                    active_col=col,
+                    reverse=reverse,
+                )
+            except Exception:
+                pass
+
+        def update_tree_headers(tree, base_headers, active_col=None, reverse=False):
+            for col, base in base_headers.items():
+                text = base
+                if active_col == col:
+                    text = f"{base} {'▼' if reverse else '▲'}"
+                try:
+                    tree.heading(col, text=text)
+                except Exception:
+                    pass
+
+        for col in ("category", "size", "files", "percent"):
+            summary_tree.heading(
+                col, command=lambda c=col: sort_tree(summary_tree, c, summary_sort_state)
+            )
+        for col in ("file", "size", "folder"):
+            files_tree.heading(
+                col, command=lambda c=col: sort_tree(files_tree, c, files_sort_state)
+            )
+        update_tree_headers(summary_tree, summary_headers)
+        update_tree_headers(files_tree, files_headers)
+
+        def start_scan():
+            if self.disk_analyzer_thread and self.disk_analyzer_thread.is_alive():
+                messagebox.showinfo(
+                    "Disk Analyzer", "A scan is already running. Please wait."
+                )
+                return
+            self.disk_analyzer_stop = threading.Event()
+            clear_tree(summary_tree)
+            clear_tree(files_tree)
+            files_tree_map.clear()
+            progress.start()
+            status_label.configure(text=f"Scanning: {selected_path['path']}")
+
+            def update_status(scanned, total_bytes, current):
+                def _update():
+                    status_label.configure(
+                        text=f"Scanning {current} • {scanned:,} files • {format_size(total_bytes)}"
+                    )
+
+                self.root.after(0, _update)
+
+            def worker():
+                try:
+                    result = self.scan_disk_usage(
+                        selected_path["path"],
+                        stop_event=self.disk_analyzer_stop,
+                        progress_callback=update_status,
+                    )
+                except Exception as e:
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Disk Analyzer", f"Scan failed: {e}"
+                        ),
+                    )
+                    return
+
+                def finish():
+                    progress.stop()
+                    if self.disk_analyzer_stop and self.disk_analyzer_stop.is_set():
+                        status_label.configure(text="Scan canceled.")
+                        return
+
+                    categories = result["categories"]
+                    total = result["total_size"] or 1
+                    for name, data in categories.items():
+                        size = data["size"]
+                        count = data["count"]
+                        percent = f"{(size / total) * 100:.1f}%"
+                        summary_tree.insert(
+                            "",
+                            "end",
+                            values=(name, format_size(size), f"{count:,}", percent),
+                        )
+
+                    for size, path in result["top_files"]:
+                        row_id = files_tree.insert(
+                            "",
+                            "end",
+                            values=(
+                                os.path.basename(path),
+                                format_size(size),
+                                os.path.dirname(path),
+                            ),
+                        )
+                        files_tree_map[row_id] = path
+
+                    status_label.configure(
+                        text=f"Done: {format_size(result['total_size'])} across {result['total_files']:,} files"
+                    )
+
+                self.root.after(0, finish)
+
+            self.disk_analyzer_thread = threading.Thread(target=worker, daemon=True)
+            self.disk_analyzer_thread.start()
+
+        # Kick off a default scan
+        start_scan()
+
     def open_scheduler_window(self):
         self.set_view(None)
         win = ctk.CTkToplevel(self.root)
@@ -1518,6 +2203,14 @@ class MCleaner:
             command=restore_backup,
         ).grid(row=0, column=4, sticky="ew")
 
+        self.registry_admin_hint = ctk.CTkLabel(
+            body,
+            text="Some entries require Administrator privileges. Try running as Administrator.",
+            font=ui_font(10, "bold"),
+            text_color=THEME["warning"],
+        )
+        self.registry_admin_hint.pack_forget()
+
         tree_frame = ctk.CTkFrame(body, fg_color="transparent")
         tree_frame.pack(fill="both", expand=True)
 
@@ -1545,10 +2238,62 @@ class MCleaner:
         self.registry_issue_map = {}
         for item in tree.get_children():
             tree.delete(item)
+        if getattr(self, "registry_admin_hint", None):
+            try:
+                self.registry_admin_hint.pack_forget()
+            except Exception:
+                pass
 
         issues = []
+        seen = set()
 
-        def add_issue(root, key_path, value_name, value_data, reason):
+        is_os_64 = bool(
+            os.environ.get("PROCESSOR_ARCHITEW6432")
+            or os.environ.get("PROCESSOR_ARCHITECTURE", "").endswith("64")
+            or sys.maxsize > 2**32
+        )
+        if (
+            is_os_64
+            and hasattr(winreg, "KEY_WOW64_64KEY")
+            and hasattr(winreg, "KEY_WOW64_32KEY")
+        ):
+            view_flags = [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY]
+        else:
+            view_flags = [0]
+
+        file_exts = (
+            ".exe",
+            ".dll",
+            ".ocx",
+            ".cpl",
+            ".sys",
+            ".bat",
+            ".cmd",
+            ".com",
+            ".ps1",
+            ".vbs",
+            ".js",
+            ".jar",
+            ".msc",
+            ".ico",
+        )
+        path_regex = re.compile(
+            r'((?:[A-Za-z]:\\|\\\\)[^"\']+?\.(?:exe|dll|ocx|cpl|sys|bat|cmd|com|ps1|vbs|js|jar|msc|ico))',
+            re.IGNORECASE,
+        )
+
+        def add_issue(root, key_path, value_name, value_data, reason, view_flag, value_type):
+            issue_key = (
+                root,
+                view_flag,
+                key_path,
+                value_name,
+                str(value_data),
+                reason,
+            )
+            if issue_key in seen:
+                return
+            seen.add(issue_key)
             issues.append(
                 {
                     "root": root,
@@ -1556,31 +2301,89 @@ class MCleaner:
                     "value": value_name,
                     "data": value_data,
                     "reason": reason,
+                    "view": view_flag,
+                    "type": value_type,
                 }
             )
 
-        def extract_path(raw):
-            raw = (raw or "").strip()
+        def normalize_raw(raw):
+            if raw is None:
+                return ""
+            text = str(raw).replace("\x00", "").strip()
+            if not text:
+                return ""
+            return os.path.expandvars(text)
+
+        def strip_entry_suffix(path):
+            if not path:
+                return ""
+            if "," in path:
+                left, _ = path.split(",", 1)
+                left = left.strip()
+                if left.lower().endswith(file_exts):
+                    return left
+            trimmed = re.sub(r",\s*-?\d+$", "", path)
+            if trimmed != path and trimmed.lower().endswith(file_exts):
+                return trimmed
+            return path
+
+        def normalize_candidate(candidate):
+            candidate = (candidate or "").strip().strip("\x00")
+            if not candidate:
+                return ""
+            if len(candidate) > 1 and candidate[0] == candidate[-1] and candidate[0] in (
+                '"',
+                "'",
+            ):
+                candidate = candidate[1:-1]
+            candidate = os.path.expandvars(candidate).strip()
+            if candidate.lower().startswith("file:///"):
+                candidate = candidate[8:].lstrip("/").replace("/", "\\")
+            candidate = strip_entry_suffix(candidate)
+            return candidate.strip()
+
+        def looks_like_abs_path(path, allow_dir=False):
+            if not path:
+                return False
+            test_path = path[4:] if path.startswith("\\\\?\\") else path
+            if not (
+                test_path.startswith("\\\\")
+                or re.match(r"^[A-Za-z]:\\", test_path)
+            ):
+                return False
+            if allow_dir:
+                return True
+            return test_path.lower().endswith(file_exts)
+
+        def extract_target(raw, allow_dir=False):
+            raw = normalize_raw(raw)
             if not raw:
                 return ""
-            if raw.startswith('"'):
-                parts = raw.split('"')
-                if len(parts) > 1:
-                    return parts[1]
-            for token in raw.split():
-                if token.lower().endswith((".exe", ".dll")) and ":" in token:
-                    return token.strip('"')
-            return raw
+            candidates = []
+            candidates.extend(re.findall(r'"([^"]+)"', raw))
+            candidates.extend([m.group(1) for m in path_regex.finditer(raw)])
+            if not candidates:
+                candidates = [raw.split()[0]]
+            for cand in candidates:
+                path = normalize_candidate(cand)
+                if looks_like_abs_path(path, allow_dir=allow_dir):
+                    return path
+            return ""
 
-        def check_key(root, path, values):
+        def check_key(root, path, values, view_flag):
             try:
-                with winreg.OpenKey(root, path) as k:
-                    for name in values:
+                with winreg.OpenKey(
+                    root, path, 0, winreg.KEY_READ | view_flag
+                ) as k:
+                    for name, allow_dir in values:
                         try:
-                            val, _ = winreg.QueryValueEx(k, name)
-                            p = extract_path(str(val))
-                            if p and ":" in p and not os.path.exists(p):
-                                add_issue(root, path, name, val, "Missing file")
+                            val, val_type = winreg.QueryValueEx(k, name)
+                            p = extract_target(val, allow_dir=allow_dir)
+                            if p and not os.path.exists(p):
+                                reason = "Missing path" if allow_dir else "Missing file"
+                                add_issue(
+                                    root, path, name, val, reason, view_flag, val_type
+                                )
                         except FileNotFoundError:
                             continue
                         except OSError:
@@ -1590,52 +2393,87 @@ class MCleaner:
 
         def scan_run_keys():
             run_keys = [
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
+                (
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run",
+                ),
+                (
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run",
+                ),
+                (
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\RunOnce",
+                ),
+                (
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"Software\Microsoft\Windows\CurrentVersion\RunOnce",
+                ),
             ]
             for root, path in run_keys:
-                try:
-                    with winreg.OpenKey(root, path) as k:
-                        i = 0
-                        while True:
-                            try:
-                                name, val, _ = winreg.EnumValue(k, i)
-                                p = extract_path(str(val))
-                                if p and ":" in p and not os.path.exists(p):
-                                    add_issue(root, path, name, val, "Invalid startup path")
-                                i += 1
-                            except OSError:
-                                break
-                except OSError:
-                    continue
+                for view_flag in view_flags:
+                    try:
+                        with winreg.OpenKey(
+                            root, path, 0, winreg.KEY_READ | view_flag
+                        ) as k:
+                            i = 0
+                            while True:
+                                try:
+                                    name, val, val_type = winreg.EnumValue(k, i)
+                                    p = extract_target(val, allow_dir=False)
+                                    if p and not os.path.exists(p):
+                                        add_issue(
+                                            root,
+                                            path,
+                                            name,
+                                            val,
+                                            "Invalid startup path",
+                                            view_flag,
+                                            val_type,
+                                        )
+                                    i += 1
+                                except OSError:
+                                    break
+                    except OSError:
+                        continue
 
         def scan_uninstall_keys():
             uninstall_paths = [
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+                ),
+                (
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+                ),
             ]
             for root, base in uninstall_paths:
-                try:
-                    with winreg.OpenKey(root, base) as root_key:
-                        i = 0
-                        while True:
-                            try:
-                                sub = winreg.EnumKey(root_key, i)
-                                sub_path = f"{base}\\{sub}"
-                                check_key(
-                                    root,
-                                    sub_path,
-                                    ["DisplayIcon", "UninstallString", "InstallLocation"],
-                                )
-                                i += 1
-                            except OSError:
-                                break
-                except OSError:
-                    continue
+                for view_flag in view_flags:
+                    try:
+                        with winreg.OpenKey(
+                            root, base, 0, winreg.KEY_READ | view_flag
+                        ) as root_key:
+                            i = 0
+                            while True:
+                                try:
+                                    sub = winreg.EnumKey(root_key, i)
+                                    sub_path = f"{base}\\{sub}"
+                                    check_key(
+                                        root,
+                                        sub_path,
+                                        [
+                                            ("DisplayIcon", False),
+                                            ("UninstallString", False),
+                                            ("InstallLocation", True),
+                                        ],
+                                        view_flag,
+                                    )
+                                    i += 1
+                                except OSError:
+                                    break
+                    except OSError:
+                        continue
 
         scan_run_keys()
         scan_uninstall_keys()
@@ -1644,7 +2482,12 @@ class MCleaner:
         for idx, issue in enumerate(issues):
             iid = f"reg{idx}"
             display_root = "HKLM" if issue["root"] == winreg.HKEY_LOCAL_MACHINE else "HKCU"
-            loc = f"{display_root}\\{issue['key']}"
+            view_label = ""
+            if issue.get("view") == getattr(winreg, "KEY_WOW64_64KEY", None):
+                view_label = " (64)"
+            elif issue.get("view") == getattr(winreg, "KEY_WOW64_32KEY", None):
+                view_label = " (32)"
+            loc = f"{display_root}{view_label}\\{issue['key']}"
             tree.insert("", "end", iid=iid, values=(issue["reason"], loc, issue["value"]))
             self.registry_issue_map[iid] = issue
 
@@ -1654,13 +2497,22 @@ class MCleaner:
     def backup_registry_items(self):
         if not self.registry_issues:
             messagebox.showinfo("Registry Cleaner", "No issues to backup.")
-            return
+            return False
 
         desktop = Path(os.path.expandvars(r"%USERPROFILE%")) / "Desktop"
         backup_dir = desktop / "registry_backups"
         backup_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_file = backup_dir / f"registry_backup_{timestamp}.reg"
+
+        views = {issue.get("view", 0) for issue in self.registry_issues}
+        view_args = []
+        if getattr(winreg, "KEY_WOW64_64KEY", None) in views:
+            view_args.append("/reg:64")
+        if getattr(winreg, "KEY_WOW64_32KEY", None) in views:
+            view_args.append("/reg:32")
+        if not view_args:
+            view_args.append(None)
 
         key_sets = [
             "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -1669,15 +2521,17 @@ class MCleaner:
             "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
             "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
             "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
-            "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
         ]
 
         creation_flags = 0x08000000  # CREATE_NO_WINDOW
 
-        def export_key(key_name, out_path):
+        def export_key(key_name, out_path, view_arg=None):
             try:
+                args = ["reg", "export", key_name, out_path, "/y"]
+                if view_arg:
+                    args.append(view_arg)
                 subprocess.run(
-                    ["reg", "export", key_name, out_path, "/y"],
+                    args,
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -1691,14 +2545,15 @@ class MCleaner:
         temp_files = []
         try:
             for key_name in key_sets:
-                try:
-                    tmp = tempfile.NamedTemporaryFile(suffix=".reg", delete=False)
-                    tmp_path = tmp.name
-                    tmp.close()
-                    if export_key(key_name, tmp_path):
-                        temp_files.append(tmp_path)
-                except Exception:
-                    continue
+                for view_arg in view_args:
+                    try:
+                        tmp = tempfile.NamedTemporaryFile(suffix=".reg", delete=False)
+                        tmp_path = tmp.name
+                        tmp.close()
+                        if export_key(key_name, tmp_path, view_arg=view_arg):
+                            temp_files.append(tmp_path)
+                    except Exception:
+                        continue
 
             with open(backup_file, "w", encoding="utf-16le") as out:
                 for tmp_path in temp_files:
@@ -1719,7 +2574,7 @@ class MCleaner:
                         continue
         except Exception as e:
             messagebox.showerror("Registry Cleaner", f"Backup failed: {e}")
-            return
+            return False
         finally:
             for tmp_path in temp_files:
                 try:
@@ -1728,6 +2583,7 @@ class MCleaner:
                     pass
 
         messagebox.showinfo("Registry Cleaner", f"Backup complete: {backup_file.resolve()}")
+        return True
 
     def restore_registry_backup(self):
         file_path = filedialog.askopenfilename(
@@ -1757,9 +2613,12 @@ class MCleaner:
             messagebox.showinfo("Registry Cleaner", "No items selected.")
             return
 
-        self.backup_registry_items()
+        if not self.backup_registry_items():
+            return
 
         cleaned = 0
+        denied = 0
+        failed = 0
         for iid in items:
             issue = self.registry_issue_map.get(iid)
             if not issue:
@@ -1769,14 +2628,40 @@ class MCleaner:
                     issue["root"],
                     issue["key"],
                     0,
-                    winreg.KEY_SET_VALUE,
+                    winreg.KEY_SET_VALUE | issue.get("view", 0),
                 ) as k:
                     winreg.DeleteValue(k, issue["value"])
                     cleaned += 1
-            except OSError:
-                continue
+            except PermissionError:
+                denied += 1
+            except OSError as e:
+                if getattr(e, "winerror", None) == 5:
+                    denied += 1
+                else:
+                    failed += 1
 
         if cleaned:
-            messagebox.showinfo("Registry Cleaner", f"Cleaned {cleaned} entries.")
+            msg = f"Cleaned {cleaned} entr{'y' if cleaned == 1 else 'ies'}."
+            if denied:
+                msg += " Some entries require administrator privileges."
+            if failed:
+                msg += " Some entries could not be cleaned."
+            messagebox.showinfo("Registry Cleaner", msg)
+        elif denied:
+            messagebox.showwarning(
+                "Registry Cleaner",
+                "No entries cleaned. Administrator privileges are required for some items.",
+            )
         else:
             messagebox.showinfo("Registry Cleaner", "No entries cleaned.")
+
+        if denied and getattr(self, "registry_admin_hint", None):
+            try:
+                self.registry_admin_hint.pack(fill="x", padx=6, pady=(0, 6))
+            except Exception:
+                pass
+        elif getattr(self, "registry_admin_hint", None):
+            try:
+                self.registry_admin_hint.pack_forget()
+            except Exception:
+                pass

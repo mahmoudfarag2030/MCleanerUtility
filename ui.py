@@ -3,6 +3,8 @@ import sys
 import threading
 import ctypes
 import math
+import re
+import subprocess
 from pathlib import Path
 from collections import deque
 from datetime import datetime
@@ -15,7 +17,7 @@ from openpyxl import Workbook
 from tkinter import ttk, messagebox, Canvas
 from PIL import Image
 
-from installed_apps import get_installed_apps
+from installed_apps import get_installed_apps, get_installed_apps_detailed
 from helpers import is_admin, format_size, browser_running_improved
 from system_tools import CpuSpeedReader, check_basic_tools
 from startup_apps import get_startup_apps, toggle_startup_app
@@ -206,6 +208,10 @@ class MCleaner:
         self.badge_frames = []
         self.busy = False
         self.cpu_reader = None
+        self.current_view = None
+        self.installed_app_map = {}
+        self.action_column_visible = False
+        self.action_column_id = "#4"
 
         self.cpu_history = deque([0] * 80, maxlen=80)
         self.ram_history = deque([0] * 80, maxlen=80)
@@ -248,11 +254,12 @@ class MCleaner:
         except Exception:
             self.cpu_reader = None
 
-    def set_table_headers(self, h1="File", h2="Size", h3="Status"):
+    def set_table_headers(self, h1="File", h2="Size", h3="Status", h4=None):
         try:
             self.table.heading("file", text=h1)
             self.table.heading("size", text=h2)
             self.table.heading("status", text=h3)
+            self.table.heading("action", text=h4 if h4 is not None else "")
         except Exception:
             pass
 
@@ -394,26 +401,42 @@ class MCleaner:
         style.map("Treeview", background=[("selected", "#2563eb")])
 
         self.table = ttk.Treeview(
-            table_frame, columns=("file", "size", "status"), show="headings"
+            table_frame, columns=("file", "size", "status", "action"), show="headings"
         )
+        self.table.configure(displaycolumns=("file", "size", "status", "action"))
+        self.table.bind("<Button-1>", self.on_table_click, add="+")
 
         # Make table columns responsive to window size
         def update_table_columns(event=None):
             try:
                 table_width = self.table.winfo_width()
                 if table_width > 100:  # Only update if table has been sized
-                    # Allocate space proportionally: file (60%), size (15%), status (25%)
-                    if screen_width <= 1366:
-                        # Smaller minimum widths for small screens
-                        file_width = max(int(table_width * 0.6), 150)
-                        size_width = max(int(table_width * 0.15), 60)
-                        status_width = max(table_width - file_width - size_width, 100)
+                    if self.action_column_visible:
+                        action_width = 90 if screen_width <= 1366 else 110
+                        remaining = max(table_width - action_width, 100)
+
+                        if screen_width <= 1366:
+                            file_width = max(int(remaining * 0.6), 150)
+                            size_width = max(int(remaining * 0.15), 60)
+                            status_width = max(remaining - file_width - size_width, 100)
+                        else:
+                            file_width = max(int(remaining * 0.6), 200)
+                            size_width = max(int(remaining * 0.15), 80)
+                            status_width = max(remaining - file_width - size_width, 120)
+
+                        self.table.column("action", width=action_width, stretch=False)
                     else:
-                        # Standard minimum widths for larger screens
-                        file_width = max(int(table_width * 0.6), 200)
-                        size_width = max(int(table_width * 0.15), 80)
-                        status_width = max(table_width - file_width - size_width, 120)
-                    
+                        if screen_width <= 1366:
+                            file_width = max(int(table_width * 0.6), 150)
+                            size_width = max(int(table_width * 0.15), 60)
+                            status_width = max(table_width - file_width - size_width, 100)
+                        else:
+                            file_width = max(int(table_width * 0.6), 200)
+                            size_width = max(int(table_width * 0.15), 80)
+                            status_width = max(table_width - file_width - size_width, 120)
+
+                        self.table.column("action", width=0, stretch=False)
+
                     self.table.column("file", width=file_width)
                     self.table.column("size", width=size_width)
                     self.table.column("status", width=status_width)
@@ -422,14 +445,14 @@ class MCleaner:
 
         self.table.bind("<Configure>", update_table_columns)
 
-        for col in ("file", "size", "status"):
+        for col in ("file", "size", "status", "action"):
             self.table.heading(col, text=col.title())
             if screen_width <= 1366:
                 # Smaller initial widths for small screens
-                initial_widths = {"file": 150, "size": 60, "status": 100}
+                initial_widths = {"file": 150, "size": 60, "status": 100, "action": 90}
             else:
                 # Standard initial widths for larger screens
-                initial_widths = {"file": 200, "size": 80, "status": 120}
+                initial_widths = {"file": 200, "size": 80, "status": 120, "action": 110}
             self.table.column(col, width=initial_widths[col])  # Initial width, will be updated
 
         scrollbar = ttk.Scrollbar(
@@ -439,6 +462,7 @@ class MCleaner:
 
         self.table.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        self.show_action_column(False)
 
     def make_perf_card(self, parent, title, color, height=110, title_font=("Segoe UI", 11, "bold"), value_font=("Segoe UI", 13)):
         frame = ctk.CTkFrame(parent, height=height, corner_radius=16, width=1)
@@ -544,7 +568,10 @@ class MCleaner:
     def add_rows_batch(self, rows):
         for r in rows:
             try:
-                self.table.insert("", "end", values=r[:3])
+                vals = list(r[:4])
+                if len(vals) < 4:
+                    vals.extend([""] * (4 - len(vals)))
+                self.table.insert("", "end", values=vals)
             except Exception:
                 pass
 
@@ -554,6 +581,52 @@ class MCleaner:
                 self.table.delete(row)
             except Exception:
                 pass
+
+    def show_action_column(self, show: bool):
+        self.action_column_visible = bool(show)
+        try:
+            if show:
+                self.table.configure(displaycolumns=("file", "size", "status", "action"))
+            else:
+                self.table.configure(displaycolumns=("file", "size", "status"))
+            self.table.heading("action", text="Uninstall" if show else "")
+            self.table.column("action", width=90 if show else 0, stretch=False)
+            self.table.column("action", minwidth=0)
+        except Exception:
+            pass
+
+    def set_view(self, view_name):
+        self.current_view = view_name
+        if view_name != "installed_apps":
+            self.installed_app_map = {}
+            self.show_action_column(False)
+        else:
+            self.show_action_column(True)
+
+    def on_table_click(self, event):
+        if self.current_view != "installed_apps":
+            return
+
+        col = self.table.identify_column(event.x)
+        if col != self.action_column_id:
+            return
+
+        row_id = self.table.identify_row(event.y)
+        if not row_id:
+            return "break"
+
+        values = self.table.item(row_id).get("values", [])
+        if not values or len(values) < 3:
+            return "break"
+
+        key = (values[0], values[1], values[2])
+        app = self.installed_app_map.get(key)
+        if not app:
+            messagebox.showwarning("Uninstall", "Uninstall data not available.")
+            return "break"
+
+        self.uninstall_app(app)
+        return "break"
 
     def update_stats(self):
         try:
@@ -573,6 +646,7 @@ class MCleaner:
             pass
 
     def preview_files(self, folder: Path):
+        self.set_view(None)
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
 
@@ -628,6 +702,7 @@ class MCleaner:
         )
 
     def confirm_and_clean(self, folder):
+        self.set_view(None)
         if self.busy:
             messagebox.showinfo(
                 "Busy", "Another operation is in progress. Please wait."
@@ -653,6 +728,7 @@ class MCleaner:
         threading.Thread(target=worker, daemon=True).start()
 
     def clean_browser_cache(self):
+        self.set_view(None)
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
 
@@ -675,6 +751,7 @@ class MCleaner:
         threading.Thread(target=worker, daemon=True).start()
 
     def clean_recycle_bin(self):
+        self.set_view(None)
         self.set_table_headers("File", "Size", "Status")
         self.clear_table()
         self.set_busy(True)
@@ -689,6 +766,7 @@ class MCleaner:
             self.set_busy(False)
 
     def clean_all(self):
+        self.set_view(None)
         if self.busy:
             messagebox.showinfo(
                 "Busy", "Another operation is in progress. Please wait."
@@ -733,16 +811,124 @@ class MCleaner:
         threading.Thread(target=worker, daemon=True).start()
 
     def show_installed_apps(self):
+        if self.busy:
+            messagebox.showinfo(
+                "Busy", "Another operation is in progress. Please wait."
+            )
+            return
+
+        self.set_view("installed_apps")
         self.clear_table()
-        self.set_table_headers("Application", "Version", "Publisher")
+        self.set_table_headers("Application", "Version", "Publisher", "Uninstall")
 
         try:
-            apps = get_installed_apps()
-            self.add_rows_batch(apps if apps else [("No applications found", "-", "-")])
+            try:
+                self.table.unbind("<Double-1>")
+            except Exception:
+                pass
+
+            apps = get_installed_apps_detailed()
+
+            if not apps:
+                self.add_rows_batch([("No applications found", "-", "-", "")])
+                return
+
+            rows = [(a["name"], a["version"], a["publisher"], "Uninstall") for a in apps]
+            self.add_rows_batch(rows)
+
+            app_map = {}
+            for app in apps:
+                key = (app["name"], app["version"], app["publisher"])
+                if key not in app_map:
+                    app_map[key] = app
+            self.installed_app_map = app_map
+
+            def uninstall_selected(event):
+                try:
+                    row_id = self.table.identify_row(event.y)
+                    if not row_id:
+                        return
+
+                    values = self.table.item(row_id).get("values", [])
+                    if not values or len(values) < 3:
+                        return
+
+                    key = (values[0], values[1], values[2])
+                    app = app_map.get(key)
+                    if not app:
+                        messagebox.showwarning(
+                            "Uninstall", "Uninstall data not available."
+                        )
+                        return
+
+                    self.uninstall_app(app)
+
+                except Exception as e:
+                    messagebox.showerror("Uninstall", f"Uninstall failed: {e}")
+
+            self.table.bind("<Double-1>", uninstall_selected)
+
         except Exception as e:
             self.add_rows_batch([("Installed Apps", "-", f"Error: {e}")])
 
+    def normalize_uninstall_cmd(self, cmd):
+        cmd = (cmd or "").strip()
+        if not cmd:
+            return ""
+
+        # If this is an MSI command with /I, switch to /X to trigger uninstall.
+        if re.search(r"\bmsiexec(\.exe)?\b", cmd, flags=re.IGNORECASE):
+            if not re.search(r"\s/([xX])\b", cmd):
+                cmd = re.sub(r"\s/([iI])\b", " /X", cmd, count=1)
+
+        return cmd
+
+    def uninstall_app(self, app):
+        name = app.get("name", "this application")
+        version = app.get("version", "-")
+        publisher = app.get("publisher", "-")
+        uninstall = app.get("uninstall", "")
+        quiet_uninstall = app.get("quiet_uninstall", "")
+
+        if app.get("no_remove"):
+            if not messagebox.askyesno(
+                "Uninstall",
+                f"{name} is marked as not removable.\n\nAttempt uninstall anyway?",
+            ):
+                return
+
+        if app.get("system_component"):
+            if not messagebox.askyesno(
+                "Uninstall",
+                f"{name} is marked as a system component.\n\nAttempt uninstall anyway?",
+            ):
+                return
+
+        cmd = uninstall or quiet_uninstall
+        if not cmd:
+            messagebox.showwarning(
+                "Uninstall", f"No uninstall command found for:\n{name}"
+            )
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Uninstall",
+            f"Uninstall this program?\n\n{name}\nVersion: {version}\nPublisher: {publisher}",
+        ):
+            return
+
+        cmd = self.normalize_uninstall_cmd(cmd)
+
+        try:
+            subprocess.Popen(cmd, shell=True)
+            messagebox.showinfo(
+                "Uninstall", "The uninstaller has been launched."
+            )
+        except Exception as e:
+            messagebox.showerror("Uninstall", f"Failed to start: {e}")
+
     def show_startup_apps(self):
+        self.set_view("startup_apps")
         if self.busy:
             messagebox.showinfo(
                 "Busy", "Another operation is in progress. Please wait."
@@ -809,6 +995,7 @@ class MCleaner:
             self.add_rows_batch([("Startup Apps", "-", f"Error: {e}")])
 
     def run_speed_test_ui(self):
+        self.set_view(None)
         win = ctk.CTkToplevel(self.root)
         win.title("Speed Test")
         win.geometry("210x116")
@@ -863,6 +1050,7 @@ class MCleaner:
         threading.Thread(target=worker, daemon=True).start()
 
     def check_basic_tools(self):
+        self.set_view(None)
         self.clear_table()
         self.set_table_headers("Tool", "Status", "Notes")
 
@@ -872,6 +1060,7 @@ class MCleaner:
             self.add_rows_batch([("Runtime Check", "-", f"Error: {e}")])
 
     def export_excel_report(self):
+        self.set_view(None)
         fn = f"MCleaner_Report_{datetime.now():%Y-%m-%d_%H-%M-%S}.xlsx"
         wb = Workbook()
         ws = wb.active
@@ -886,6 +1075,7 @@ class MCleaner:
             self.add_rows_batch([(fn, "-", f"Error: {e}")])
 
     def open_scheduler_window(self):
+        self.set_view(None)
         win = ctk.CTkToplevel(self.root)
         win.title("Scheduled Cleanup")
         win.geometry("210x294")
