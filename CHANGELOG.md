@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.2 - 2026-03-20
+
+This release focuses on smoother startup and a more responsive scheduler experience.
+
+- Removed the brief console flash on startup by preferring embedded build metadata in the packaged app.
+- Made the Scheduled Cleanup window and Create/Remove actions non-blocking so the UI stays responsive.
+- Hid and timed out `schtasks` calls to avoid visible command windows and long hangs.
+- Rebuilt and published the `MCleaner.exe` for the release.
+
 ## v1.0.1 - 2026-03-19
 
 This was a small follow-up release focused on packaging and download confidence.
