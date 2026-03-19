@@ -10,6 +10,7 @@ pytest-cache-files-*/
 build/
 dist/*
 !dist/MCleaner.exe
+!dist/MCleaner.exe.sha256
 *.spec
 build_info.py
 

@@ -12,6 +12,7 @@ You can also pass additional pyinstaller args:
 """
 
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,8 @@ ROOT = Path(__file__).resolve().parent
 
 CLEAN_PATHS = ["build", "dist", "__pycache__"]
 SPEC_FILES = ["MCleaner.spec", "main.spec", "build_info.py"]
+DIST_EXE = ROOT / "dist" / "MCleaner.exe"
+
 
 def get_build_version() -> str:
     """Return the short hash of the latest commit."""
@@ -33,6 +36,18 @@ def get_build_version() -> str:
         return out.decode().strip()
     except Exception:
         return "unknown"
+
+
+def write_sha256(file_path: Path) -> Path:
+    """Write a .sha256 checksum file next to the built executable."""
+    digest = hashlib.sha256()
+    with file_path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+    checksum_path = file_path.with_suffix(file_path.suffix + ".sha256")
+    checksum_path.write_text(f"{digest.hexdigest()}  {file_path.name}\n", encoding="ascii")
+    return checksum_path
 
 PYINSTALLER_DEFAULT_ARGS = [
     "--onefile",
@@ -80,6 +95,10 @@ def run_pyinstaller(extra_args=None):
 
     print("Running:", " ".join(args))
     subprocess.run(args, check=True)
+
+    if DIST_EXE.exists():
+        checksum_path = write_sha256(DIST_EXE)
+        print(f"SHA256 written to: {checksum_path}")
 
 
 def main():
