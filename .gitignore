@@ -3,14 +3,15 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.venv/
+.pytest_cache/
+.ruff_cache/
 .pytest_tmp/
 pytest-cache-files-*/
 
 # PyInstaller
 build/
-dist/*
-!dist/MCleaner.exe
-!dist/MCleaner.exe.sha256
+dist/
 *.spec
 build_info.py
 

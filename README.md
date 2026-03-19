@@ -15,9 +15,9 @@ The current build focuses on safer startup behavior, better cross-PC compatibili
 
 ## Direct Download
 
-For non-technical users, download the ready-to-use Windows app here:
+For non-technical users, download the ready-to-use Windows app from the GitHub Releases page:
 
-[Download MCleaner.exe](https://github.com/mahmoudfarag2030/MCleanerUtility/raw/refs/heads/master/dist/MCleaner.exe)
+[MCleaner Releases](https://github.com/mahmoudfarag2030/MCleanerUtility/releases)
 
 ---
 
@@ -93,8 +93,8 @@ The repo is configured to use a local pytest temp directory so test runs stay st
 ## Notes
 
 - This project is Windows-only and uses Win32 APIs, Task Scheduler, and registry access.
-- The repo keeps `dist/MCleaner.exe` checked in while other generated build artifacts remain ignored.
-- This project is not open source. Usage is governed by [LICENSE.txt](LICENSE.txt).
+- Build outputs such as `dist/` are ignored in Git and should be attached to GitHub Releases instead of being committed to the repository.
+- This project is open source under the [MIT License](LICENSE.txt).
 
 ---
 

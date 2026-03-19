@@ -1,42 +1,21 @@
-MCleaner Personal Use License Agreement
+MIT License
 
 Copyright (c) 2026 Mahmoud Farag
-All rights reserved.
 
-1. Grant of License
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Permission is granted to install and use MCleaner for personal, non-commercial use only.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-2. Restrictions
-
-You may not:
-
-- use the software for commercial purposes;
-- sell, rent, lease, sublicense, or redistribute the software;
-- modify, adapt, translate, reverse engineer, decompile, or disassemble the software, except where such restriction is prohibited by applicable law;
-- remove or alter copyright, attribution, branding, or proprietary notices;
-- publish modified or unmodified copies of the software without prior written permission from the copyright owner.
-
-3. Ownership
-
-The software is licensed, not sold. All intellectual property rights, title, and interest in and to the software remain with the copyright owner.
-
-4. Source Code and Repository Access
-
-Access to the source code or repository, if provided, does not grant permission to reuse, redistribute, modify, publish, or commercialize the software except as expressly permitted by this license.
-
-5. Termination
-
-This license terminates automatically if you fail to comply with its terms. Upon termination, you must stop using the software and destroy all copies in your possession or control.
-
-6. Disclaimer of Warranty
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
-
-7. Limitation of Liability
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT OWNER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OF OR OTHER DEALINGS IN THE SOFTWARE.
-
-8. Contact
-
-For commercial licensing, redistribution, or other permission requests, contact the copyright owner.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
