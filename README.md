@@ -4,6 +4,8 @@ MCleanerUtility is a small Windows cleanup app I built in Python with CustomTkin
 
 The idea behind it was simple: I wanted one lightweight desktop tool that could handle the cleanup tasks I actually use on my own PC without feeling bloated or confusing.
 
+![MCleaner dashboard](docs/screenshots/main-window.png)
+
 Right now the app can:
 
 - clean Windows and user temp folders
@@ -16,6 +18,8 @@ Right now the app can:
 - check a few basic Windows runtime components
 
 Most of the recent work has been around making it safer and more reliable across different Windows setups.
+
+If you want a quick summary of what changed between tagged versions, check [CHANGELOG.md](CHANGELOG.md).
 
 ## Direct Download
 
