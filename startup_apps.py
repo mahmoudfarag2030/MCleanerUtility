@@ -94,6 +94,8 @@ def read_registry_apps(root, path, source, status_map):
                         "registry_name": raw_name,
                         "status": status_map.get(raw_name, "Enabled"),
                         "source": source,
+                        "startup_type": "registry",
+                        "registry_root": root,
                         "publisher": detect_publisher(clean),
                         "impact": estimate_impact(clean),
                     }
@@ -130,6 +132,8 @@ def read_startup_folder():
                         "registry_name": item.name,
                         "status": "Enabled",
                         "source": "Startup Folder",
+                        "startup_type": "folder",
+                        "registry_root": None,
                         "publisher": detect_publisher(item.name),
                         "impact": estimate_impact(item.name),
                     }
@@ -146,6 +150,8 @@ def read_startup_folder():
                         "registry_name": item.name,
                         "status": "Disabled",
                         "source": "Startup Folder",
+                        "startup_type": "folder",
+                        "registry_root": None,
                         "publisher": detect_publisher(item.name),
                         "impact": estimate_impact(item.name),
                     }
@@ -182,7 +188,14 @@ def get_startup_apps():
     apps.sort(key=lambda x: x["display_name"].lower())
 
     return [
-        (app["display_name"], app["status"], app["source"], app["registry_name"])
+        (
+            app["display_name"],
+            app["status"],
+            app["source"],
+            app["registry_name"],
+            app["startup_type"],
+            app["registry_root"],
+        )
         for app in apps
     ]
 
@@ -209,17 +222,28 @@ def toggle_startup_folder_item(app_name, enable=True):
         return False, str(e)
 
 
-def toggle_registry_startup(registry_name, enable=True):
-    locations = [
-        (
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
-        ),
-        (
-            winreg.HKEY_LOCAL_MACHINE,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
-        ),
-    ]
+def toggle_registry_startup(registry_name, enable=True, registry_root=None):
+    locations = []
+    if registry_root is not None:
+        locations.append(
+            (
+                registry_root,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+            )
+        )
+    else:
+        locations.extend(
+            [
+                (
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+                ),
+                (
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+                ),
+            ]
+        )
 
     value = (
         b"\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -229,9 +253,9 @@ def toggle_registry_startup(registry_name, enable=True):
 
     for root, path in locations:
         try:
-            key = winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE)
-            winreg.SetValueEx(key, registry_name, 0, winreg.REG_BINARY, value)
-            return True, "Registry updated"
+            with winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.SetValueEx(key, registry_name, 0, winreg.REG_BINARY, value)
+                return True, "Registry updated"
 
         except PermissionError:
             return False, "Requires Administrator Permission"
@@ -242,13 +266,23 @@ def toggle_registry_startup(registry_name, enable=True):
     return False, "Startup entry not found"
 
 
-def toggle_startup_app(app_name, enable=True, registry_name=None):
+def toggle_startup_app(
+    app_name,
+    enable=True,
+    registry_name=None,
+    source=None,
+    registry_root=None,
+):
     startup = (
         Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
     )
     disabled = startup / "_Disabled"
 
-    if (startup / app_name).exists() or (disabled / app_name).exists():
+    if source == "Startup Folder" or (startup / app_name).exists() or (disabled / app_name).exists():
         return toggle_startup_folder_item(app_name, enable)
 
-    return toggle_registry_startup(registry_name or app_name, enable)
+    return toggle_registry_startup(
+        registry_name or app_name,
+        enable,
+        registry_root=registry_root,
+    )

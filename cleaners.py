@@ -4,6 +4,21 @@ from pathlib import Path
 from helpers import file_in_use, format_size
 
 NEW_FILE_PROTECTION_SECONDS = 300
+UI_BATCH_SIZE = 50
+PROGRESS_UPDATE_INTERVAL = 25
+
+
+def iter_files(folder):
+    for root_dir, _, files in os.walk(folder):
+        for fname in files:
+            yield Path(root_dir) / fname
+
+
+def count_files(folder):
+    total = 0
+    for _, _, files in os.walk(folder):
+        total += len(files)
+    return total
 
 
 def clean_folder(folder, app=None, unlock=True):
@@ -12,10 +27,10 @@ def clean_folder(folder, app=None, unlock=True):
     deleted_mb = 0.0
     protected_count = 0
 
-    files = [Path(r) / f for r, _, fs in os.walk(folder) for f in fs]
-    total_files = len(files)
+    total_files = count_files(folder)
+    batch = []
 
-    for i, path in enumerate(files, start=1):
+    for i, path in enumerate(iter_files(folder), start=1):
         try:
             stat = path.stat()
             size = stat.st_size
@@ -40,14 +55,19 @@ def clean_folder(folder, app=None, unlock=True):
 
             row = (path.name, format_size(size), status)
             results.append(row)
+            batch.append(row)
 
-            if app:
+            if app and len(batch) >= UI_BATCH_SIZE:
                 try:
-                    app.root.after(0, lambda r=row: app.add_rows_batch([r]))
+                    rows = batch[:]
+                    batch.clear()
+                    app.root.after(0, lambda r=rows: app.add_rows_batch(r))
                 except Exception:
                     pass
 
-            if app and total_files:
+            if app and total_files and (
+                i % PROGRESS_UPDATE_INTERVAL == 0 or i == total_files
+            ):
                 try:
                     progress = i / total_files
                     app.root.after(0, lambda p=progress: app.set_progress(p))
@@ -56,6 +76,13 @@ def clean_folder(folder, app=None, unlock=True):
 
         except Exception:
             continue
+
+    if app and batch:
+        try:
+            rows = batch[:]
+            app.root.after(0, lambda r=rows: app.add_rows_batch(r))
+        except Exception:
+            pass
 
     if app:
         try:

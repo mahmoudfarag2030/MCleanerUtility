@@ -36,9 +36,9 @@ def resource_path(relative_path: str) -> str:
     try:
         base_path = sys._MEIPASS  # type: ignore[attr-defined]
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = Path(__file__).resolve().parent.parent
 
-    return os.path.join(base_path, relative_path)
+    return os.path.join(str(base_path), relative_path)
 
 
 PREVIEW_SAMPLE_ROWS = 30

@@ -1,4 +1,5 @@
 import ctypes
+import os
 from pathlib import Path
 import psutil
 
@@ -39,3 +40,11 @@ def browser_running_improved():
             continue
 
     return False
+
+
+def get_system_drive_root():
+    drive = os.environ.get("SystemDrive") or os.environ.get("WINDIR", "C:\\")[:2]
+    drive = drive.rstrip("\\/")
+    if not drive.endswith(":"):
+        drive = f"{drive}:"
+    return f"{drive}\\"

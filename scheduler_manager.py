@@ -1,15 +1,25 @@
 import subprocess
+from pathlib import Path
 
 TASK_NAME = "MCleanerAutoCleanup"
 
 
-def create_task(exe_path, mode):
+def build_silent_cleanup_command(exe_path):
+    exe = Path(exe_path)
+    if exe.name.lower().startswith("python"):
+        script_path = Path(__file__).resolve().parent / "main.py"
+        return [str(exe), str(script_path), "--run-silent"]
+    return [str(exe), "--run-silent"]
+
+
+def build_schtasks_create_command(exe_path, mode):
     schedules = {"Daily": "DAILY", "Weekly": "WEEKLY", "Monthly": "MONTHLY"}
 
     if mode not in schedules:
-        return False, "Invalid schedule"
+        raise ValueError("Invalid schedule")
 
-    cmd = [
+    target_args = build_silent_cleanup_command(exe_path)
+    return [
         "schtasks",
         "/Create",
         "/SC",
@@ -17,9 +27,16 @@ def create_task(exe_path, mode):
         "/TN",
         TASK_NAME,
         "/TR",
-        f'"{exe_path}" --run-silent',
+        subprocess.list2cmdline(target_args),
         "/F",
     ]
+
+
+def create_task(exe_path, mode):
+    try:
+        cmd = build_schtasks_create_command(exe_path, mode)
+    except ValueError:
+        return False, "Invalid schedule"
 
     try:
         subprocess.run(
@@ -27,7 +44,6 @@ def create_task(exe_path, mode):
             check=True,
             capture_output=True,
             text=True,
-            shell=True,
         )
         return True, f"{mode} schedule created successfully"
     except Exception as e:
@@ -38,7 +54,7 @@ def delete_task():
     cmd = ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True, "Schedule removed successfully"
     except Exception as e:
         return False, str(e)
@@ -48,7 +64,7 @@ def task_exists():
     cmd = ["schtasks", "/Query", "/TN", TASK_NAME]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True
     except Exception:
         return False

@@ -5,6 +5,7 @@ import heapq
 import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -25,7 +26,7 @@ from cleaners import (
     clean_junk_files as run_junk_clean,
 )
 from installed_apps import get_installed_apps_detailed
-from helpers import browser_running_improved, format_size, is_admin
+from helpers import browser_running_improved, format_size, get_system_drive_root, is_admin
 from scheduler_manager import create_task, delete_task, task_exists
 from speed_test import run_speed_test
 from startup_apps import get_startup_apps, toggle_startup_app
@@ -862,7 +863,7 @@ class MCleaner:
         try:
             cpu = psutil.cpu_percent()
             ram = psutil.virtual_memory()
-            disk = psutil.disk_usage("C:\\")
+            disk = psutil.disk_usage(get_system_drive_root())
             ghz = (
                 self.cpu_reader.read()
                 if self.cpu_reader and hasattr(self.cpu_reader, "read")
@@ -1402,7 +1403,7 @@ class MCleaner:
         cmd = self.normalize_uninstall_cmd(cmd)
 
         try:
-            subprocess.Popen(cmd, shell=True)
+            subprocess.Popen(shlex.split(cmd, posix=False))
         except Exception as e:
             messagebox.showerror("Uninstall", f"Failed to start: {e}")
 
@@ -1448,7 +1449,13 @@ class MCleaner:
                         return
 
                     enable = item[1].lower() == "disabled"
-                    result = toggle_startup_app(app_name, enable, registry_name=item[3])
+                    result = toggle_startup_app(
+                        app_name,
+                        enable,
+                        registry_name=item[3],
+                        source=item[2],
+                        registry_root=item[5],
+                    )
 
                     ok = result[0] if isinstance(result, tuple) else bool(result)
                     msg = (
@@ -2017,8 +2024,7 @@ class MCleaner:
             self.disk_analyzer_thread = threading.Thread(target=worker, daemon=True)
             self.disk_analyzer_thread.start()
 
-        # Kick off a default scan
-        start_scan()
+        status_label.configure(text="Ready. Click Analyze to start.")
 
     def open_scheduler_window(self):
         self.set_view(None)

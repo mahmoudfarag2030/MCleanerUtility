@@ -1,27 +1,28 @@
 # MCleanerUtility
 
-MCleanerUtility is a lightweight Windows cleanup utility built with Python and CustomTkinter. It provides a simple, modern UI for:
+MCleanerUtility is a Windows cleanup utility built with Python and CustomTkinter. It includes tools for:
 
-- cleaning temporary folders (system + user temp)
-- cleaning junk files (logs, caches, crash dumps, leftovers)
+- cleaning Windows and user temp folders
+- cleaning junk files, caches, crash dumps, and leftovers
 - emptying the Recycle Bin
-- registry cleaner with backup/restore options
-- scheduling automatic cleanup via Task Scheduler
 - viewing installed apps and managing startup items
-- monitoring system performance (CPU/RAM/Disk)
+- running scheduled cleanup through Task Scheduler
+- monitoring CPU, memory, and disk usage
+- analyzing disk usage by category and large files
+- checking basic Windows runtime components
+
+The current build focuses on safer startup behavior, better cross-PC compatibility, and more stable Windows-specific operations.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Requirements
 
 - Windows 10/11
-- Python 3.13 (recommended)
+- Python 3.13 recommended
 
-### Setup (recommended)
-
-From the project root:
+### Setup
 
 ```powershell
 python -m venv .venv
@@ -29,7 +30,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-### Run (development)
+### Run in Development
 
 ```powershell
 python main.py
@@ -37,41 +38,59 @@ python main.py
 
 ---
 
-## 🧰 Build (Create a standalone executable)
+## Build
 
-A helper script is included to clean previous build outputs and run PyInstaller:
+Build the standalone executable with:
 
 ```powershell
 python build.py
 ```
 
-This removes `build/`, `dist/`, `__pycache__/` and any existing `.spec` files before building.
+This cleans previous build artifacts and produces:
 
-If you prefer to run PyInstaller manually:
+```text
+dist/MCleaner.exe
+```
+
+You can also run PyInstaller manually:
 
 ```powershell
-pyinstaller --onefile --windowed --icon=MCleaner.ico --add-data "MCleaner.png;." --collect-all customtkinter --name MCleaner --clean --noconfirm main.py
+pyinstaller --onefile --windowed --icon=MCleaner.ico --add-data "MCleaner.png;." --add-data "build_info.py;." --collect-all customtkinter --name MCleaner --clean --noconfirm main.py
 ```
 
 ---
 
-## 🧪 Tests
+## Tests
 
-Run the unit test suite:
+Run the test suite with:
 
 ```powershell
 python -m pytest
 ```
 
----
-
-## 📦 Notes
-
-- The build bundles all Python dependencies and assets into a single executable (`dist/MCleaner.exe`).
-- This project is Windows-only (uses Win32 APIs and Task Scheduler).
+The repo is configured to use a local pytest temp directory so test runs stay stable on Windows systems where the global temp folder may be locked or restricted.
 
 ---
 
-## 🤝 Contributing
+## Stability Notes
 
-Contributions are welcome! Open an issue or a pull request for bug fixes, improvements, or new features.
+- Scheduled cleanup now builds the correct command for both source runs and packaged `.exe` runs.
+- Resource loading no longer depends on the current working directory.
+- Disk usage monitoring uses the actual Windows system drive instead of assuming `C:\`.
+- Temp and junk cleanup batch UI updates to reduce lag on large folders.
+- Startup toggle handling is more reliable across `HKCU`, `HKLM`, and Startup Folder entries.
+- Disk Analyzer now waits for an explicit `Analyze` click instead of auto-starting.
+- `pywin32` is included to improve Windows integration support in packaged builds.
+
+---
+
+## Notes
+
+- This project is Windows-only and uses Win32 APIs, Task Scheduler, and registry access.
+- The repo keeps `dist/MCleaner.exe` checked in while other generated build artifacts remain ignored.
+
+---
+
+## Contributing
+
+Contributions are welcome through issues and pull requests.

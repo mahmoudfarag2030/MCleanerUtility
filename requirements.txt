@@ -1,6 +1,7 @@
 customtkinter
 pillow
 psutil
+pywin32
 openpyxl
 pyinstaller
 pytest
