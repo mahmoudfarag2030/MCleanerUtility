@@ -13,6 +13,12 @@ MCleanerUtility is a Windows cleanup utility built with Python and CustomTkinter
 
 The current build focuses on safer startup behavior, better cross-PC compatibility, and more stable Windows-specific operations.
 
+## Direct Download
+
+For non-technical users, download the ready-to-use Windows app here:
+
+[Download MCleaner.exe](https://github.com/mahmoudfarag2030/MCleanerUtility/raw/refs/heads/master/dist/MCleaner.exe)
+
 ---
 
 ## Quick Start
