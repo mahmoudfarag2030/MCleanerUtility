@@ -16,19 +16,19 @@ Get-FileHash .\MCleaner.exe -Algorithm SHA256
 Get-Content .\MCleaner.exe.sha256
 ```
 
-The values should match before running the app.
+The two hashes should match before you run the app.
 
 ## What's New
 
-- Summarize the biggest user-facing improvements.
-- Mention any Windows compatibility or startup stability fixes.
-- Mention any new tools or cleanup areas added.
+- Call out the main fixes or improvements in plain English.
+- Mention anything that changes cleanup behavior, startup handling, or Windows compatibility.
+- If you added a new tool or screen, say why it matters.
 
 ## Notes for Users
 
 - Windows may show SmartScreen warnings for unsigned apps.
-- If prompted, review the publisher and checksum before running.
-- Some features may require Administrator rights depending on the action.
+- If you are cautious about unsigned apps, verify the checksum before running the EXE.
+- Some features may need Administrator rights depending on the action.
 
 ## Release Checklist
 
