@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4 - 2026-03-20
+
+This release lines up the repository documentation and branding rules with the published source release.
+
+- Added a dedicated trademark policy for the `MCleaner` name, logo, icon, and official branding.
+- Clarified in the README that the code remains MIT-licensed while project branding is governed separately.
+- Prepared a clean follow-up release from the current `master` so the tag matches the latest docs and repo state.
+
 ## v1.0.3 - 2026-03-20
 
 This release fixes a misleading cleanup status that could claim Administrator rights were needed even when the app was already elevated.
