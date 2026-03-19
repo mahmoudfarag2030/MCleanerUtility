@@ -46,7 +46,7 @@ def resource_path(relative_path):
 
 
 PREVIEW_SAMPLE_ROWS = 30
-DEFAULT_APP_VERSION = "1.0.1"
+DEFAULT_APP_VERSION = "1.0.2"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 

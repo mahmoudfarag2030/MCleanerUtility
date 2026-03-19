@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_APP_VERSION = "1.0.1"
+DEFAULT_APP_VERSION = "1.0.2"
 
 CLEAN_PATHS = ["build", "dist", "__pycache__"]
 SPEC_FILES = ["MCleaner.spec", "main.spec", "build_info.py"]
