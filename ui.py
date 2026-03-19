@@ -47,50 +47,39 @@ def resource_path(relative_path):
 
 PREVIEW_SAMPLE_ROWS = 30
 DEFAULT_APP_VERSION = "1.0.1"
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 
-def get_app_version():
-    """Return the latest tagged app version."""
-    try:
-        repo_dir = Path(__file__).resolve().parent
-        out = subprocess.check_output(
-            ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
-            cwd=repo_dir,
-            stderr=subprocess.DEVNULL,
-        )
-        version = out.decode().strip().removeprefix("v")
-        if version:
-            return version
-    except Exception:
-        pass
+def _is_frozen_app():
+    """Return True when running from a packaged executable."""
+    return bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
 
+
+def _run_git_command(args, repo_dir):
+    """Run a git command without flashing a console window on Windows."""
+    kwargs = {
+        "cwd": repo_dir,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = NO_WINDOW
+
+    out = subprocess.check_output(args, **kwargs)
+    return out.decode().strip()
+
+
+def _get_embedded_app_version():
     try:
         from build_info import APP_VERSION as _APP_VERSION
 
         if _APP_VERSION:
-            return _APP_VERSION.removeprefix("v")
+            return _APP_VERSION.removeprefix("v").strip()
     except ImportError:
         pass
-
-    return DEFAULT_APP_VERSION
-
-
-APP_VERSION = get_app_version()
+    return None
 
 
-def get_build_version():
-    """Return a short build identifier based on the current git commit (if available)."""
-    try:
-        repo_dir = Path(__file__).resolve().parent
-        out = subprocess.check_output(
-            ["git", "describe", "--always", "--dirty"],
-            cwd=repo_dir,
-            stderr=subprocess.DEVNULL,
-        )
-        return out.decode().strip()
-    except Exception:
-        pass
-
+def _get_embedded_build_version():
     try:
         from build_info import BUILD_VERSION as _BUILD_VERSION
 
@@ -98,8 +87,47 @@ def get_build_version():
             return _BUILD_VERSION
     except ImportError:
         pass
+    return None
 
-    return "unknown"
+
+def get_app_version():
+    """Return the latest tagged app version."""
+    if _is_frozen_app():
+        return _get_embedded_app_version() or DEFAULT_APP_VERSION
+
+    try:
+        repo_dir = Path(__file__).resolve().parent
+        version = (
+            _run_git_command(
+                ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+                repo_dir,
+            )
+            .removeprefix("v")
+            .strip()
+        )
+        if version:
+            return version
+    except Exception:
+        pass
+
+    return _get_embedded_app_version() or DEFAULT_APP_VERSION
+
+
+APP_VERSION = get_app_version()
+
+
+def get_build_version():
+    """Return a short build identifier based on the current git commit (if available)."""
+    if _is_frozen_app():
+        return _get_embedded_build_version() or "unknown"
+
+    try:
+        repo_dir = Path(__file__).resolve().parent
+        return _run_git_command(["git", "describe", "--always", "--dirty"], repo_dir)
+    except Exception:
+        pass
+
+    return _get_embedded_build_version() or "unknown"
 
 
 BUILD_VERSION = get_build_version()

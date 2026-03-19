@@ -52,6 +52,26 @@ def test_get_build_version_falls_back_to_build_info(monkeypatch):
     assert get_build_version() == "abc1234"
 
 
+def test_get_app_version_prefers_embedded_build_info_when_frozen(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("git should not run in packaged mode")
+
+    monkeypatch.setattr("ui.constants._is_frozen_app", lambda: True)
+    monkeypatch.setattr("ui.constants.subprocess.check_output", fail_if_called)
+    monkeypatch.setattr(build_info, "APP_VERSION", "v2.0.0", raising=False)
+    assert get_app_version() == "2.0.0"
+
+
+def test_get_build_version_prefers_embedded_build_info_when_frozen(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("git should not run in packaged mode")
+
+    monkeypatch.setattr("ui.constants._is_frozen_app", lambda: True)
+    monkeypatch.setattr("ui.constants.subprocess.check_output", fail_if_called)
+    monkeypatch.setattr(build_info, "BUILD_VERSION", "frozen123", raising=False)
+    assert get_build_version() == "frozen123"
+
+
 def test_toggle_startup_app_uses_source_to_route_folder_entries(monkeypatch):
     captured = {}
 
