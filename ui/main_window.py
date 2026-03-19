@@ -2066,26 +2066,76 @@ class MCleaner:
 
         status_label = ctk.CTkLabel(
             body,
-            text=f"Current: {'Active' if task_exists() else 'Not active'}",
+            text="Current: Checking...",
             text_color=THEME["muted"],
         )
         status_label.pack(pady=(10, 12))
 
+        action_buttons = []
+
+        def set_scheduler_controls_enabled(enabled):
+            state = "normal" if enabled else "disabled"
+            for button in action_buttons:
+                try:
+                    button.configure(state=state)
+                except Exception:
+                    pass
+
+        def refresh_status_async(busy_text=None):
+            if busy_text:
+                status_label.configure(text=busy_text)
+            else:
+                status_label.configure(text="Current: Checking...")
+            set_scheduler_controls_enabled(False)
+
+            def worker():
+                active = task_exists()
+
+                def finish():
+                    status_label.configure(
+                        text=f"Current: {'Active' if active else 'Not active'}"
+                    )
+                    set_scheduler_controls_enabled(True)
+
+                self.root.after(0, finish)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def run_scheduler_action(action, pending_text):
+            set_scheduler_controls_enabled(False)
+            status_label.configure(text=pending_text)
+
+            def worker():
+                ok, msg = action()
+                active = task_exists()
+
+                def finish():
+                    status_label.configure(
+                        text=f"Current: {'Active' if active else 'Not active'}"
+                    )
+                    set_scheduler_controls_enabled(True)
+                    messagebox.showinfo(
+                        "Scheduler" if ok else "Scheduler Error",
+                        msg,
+                    )
+
+                self.root.after(0, finish)
+
+            threading.Thread(target=worker, daemon=True).start()
+
         def create_schedule():
-            ok, msg = create_task(sys.executable, mode.get())
-            messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
-            status_label.configure(
-                text=f"Current: {'Active' if task_exists() else 'Not active'}"
+            run_scheduler_action(
+                lambda: create_task(sys.executable, mode.get()),
+                "Current: Creating schedule...",
             )
 
         def remove_schedule():
-            ok, msg = delete_task()
-            messagebox.showinfo("Scheduler" if ok else "Scheduler Error", msg)
-            status_label.configure(
-                text=f"Current: {'Active' if task_exists() else 'Not active'}"
+            run_scheduler_action(
+                delete_task,
+                "Current: Removing schedule...",
             )
 
-        ctk.CTkButton(
+        create_button = ctk.CTkButton(
             body,
             text="Create Schedule",
             height=max(22, int(32 * BUTTON_SCALE)),
@@ -2093,8 +2143,9 @@ class MCleaner:
             fg_color=THEME["accent"],
             hover_color=THEME["accent_hover"],
             command=create_schedule,
-        ).pack(pady=(8, 6), fill="x", padx=10)
-        ctk.CTkButton(
+        )
+        create_button.pack(pady=(8, 6), fill="x", padx=10)
+        remove_button = ctk.CTkButton(
             body,
             text="Remove Schedule",
             height=max(22, int(32 * BUTTON_SCALE)),
@@ -2104,7 +2155,10 @@ class MCleaner:
             border_width=1,
             border_color=THEME["card_border"],
             command=remove_schedule,
-        ).pack(pady=(0, 6), fill="x", padx=10)
+        )
+        remove_button.pack(pady=(0, 6), fill="x", padx=10)
+        action_buttons.extend([create_button, remove_button])
+        refresh_status_async()
 
     def set_busy(self, value):
         self.busy = value

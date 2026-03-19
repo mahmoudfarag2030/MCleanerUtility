@@ -2,6 +2,8 @@ import subprocess
 from pathlib import Path
 
 TASK_NAME = "MCleanerAutoCleanup"
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+TASK_TIMEOUT_SECONDS = 15
 
 
 def build_silent_cleanup_command(exe_path):
@@ -44,6 +46,8 @@ def create_task(exe_path, mode):
             check=True,
             capture_output=True,
             text=True,
+            timeout=TASK_TIMEOUT_SECONDS,
+            creationflags=NO_WINDOW,
         )
         return True, f"{mode} schedule created successfully"
     except Exception as e:
@@ -54,7 +58,14 @@ def delete_task():
     cmd = ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=TASK_TIMEOUT_SECONDS,
+            creationflags=NO_WINDOW,
+        )
         return True, "Schedule removed successfully"
     except Exception as e:
         return False, str(e)
@@ -64,7 +75,14 @@ def task_exists():
     cmd = ["schtasks", "/Query", "/TN", TASK_NAME]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=TASK_TIMEOUT_SECONDS,
+            creationflags=NO_WINDOW,
+        )
         return True
     except Exception:
         return False
