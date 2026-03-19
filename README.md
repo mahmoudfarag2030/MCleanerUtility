@@ -88,7 +88,16 @@ The repo uses a local pytest temp directory because the global Windows temp fold
 - This project is Windows-only and depends on Win32 APIs, Task Scheduler, and registry access.
 - The repo keeps `dist/MCleaner.exe` checked in for convenience, while other generated build files stay ignored.
 - The project is open source under the [MIT License](LICENSE.txt).
+- The `MCleaner` name, logo, icon, and official branding are covered by the [Trademark Policy](TRADEMARKS.md).
 - Some features may need Administrator rights depending on what you are trying to clean or change.
+
+## License And Branding
+
+The source code in this repository is available under the [MIT License](LICENSE.txt).
+
+That means you can use, modify, and redistribute the code, including in your own forks.
+
+However, the `MCleaner` name, logo, icon, and project branding are not granted under the MIT license. If you redistribute a modified version, do not imply that it is the official `MCleaner` project unless you have permission. See [TRADEMARKS.md](TRADEMARKS.md) for the branding rules.
 
 ## Contributing
 
