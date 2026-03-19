@@ -6,7 +6,7 @@ The idea behind it was simple.
 
 I wanted one lightweight desktop tool that could handle the cleanup tasks I actually use on my own PC without feeling bloated or confusing.
 
-<img width="806" height="573" alt="image" src="https://github.com/user-attachments/assets/ebe80403-0781-4a89-b69d-316cd822b688" />
+<img width="806" height="562" alt="image" src="https://github.com/user-attachments/assets/658bd9a8-0462-40cf-bcac-f7fa6c6f46c5" />
 
 
 Right now the app can:
