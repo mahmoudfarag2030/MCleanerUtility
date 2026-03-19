@@ -2,9 +2,12 @@
 
 MCleanerUtility is a small Windows cleanup app I built in Python with CustomTkinter.
 
-The idea behind it was simple: I wanted one lightweight desktop tool that could handle the cleanup tasks I actually use on my own PC without feeling bloated or confusing.
+The idea behind it was simple.
 
-![MCleaner dashboard](docs/screenshots/main-window.png)
+I wanted one lightweight desktop tool that could handle the cleanup tasks I actually use on my own PC without feeling bloated or confusing.
+
+<img width="806" height="573" alt="image" src="https://github.com/user-attachments/assets/ebe80403-0781-4a89-b69d-316cd822b688" />
+
 
 Right now the app can:
 
