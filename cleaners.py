@@ -1,11 +1,13 @@
 import os
 import time
 from pathlib import Path
-from helpers import file_in_use, format_size
+from helpers import file_in_use, format_size, is_admin
 
 NEW_FILE_PROTECTION_SECONDS = 300
 UI_BATCH_SIZE = 50
 PROGRESS_UPDATE_INTERVAL = 25
+
+READ_ONLY_MASK = 0o222
 
 
 def iter_files(folder):
@@ -19,6 +21,27 @@ def count_files(folder):
     for _, _, files in os.walk(folder):
         total += len(files)
     return total
+
+
+def try_delete_file(path: Path):
+    try:
+        path.unlink()
+        return True, "Deleted"
+    except PermissionError:
+        # Windows can raise PermissionError for read-only temp files even when
+        # the app is already elevated. Clear the flag and retry once.
+        try:
+            mode = path.stat().st_mode
+            if not mode & READ_ONLY_MASK:
+                path.chmod(mode | 0o666)
+                path.unlink()
+                return True, "Deleted"
+        except Exception:
+            pass
+
+        if is_admin():
+            return False, "Permission denied"
+        return False, "Needs Administrator Permission"
 
 
 def clean_folder(folder, app=None, unlock=True):
@@ -43,15 +66,12 @@ def clean_folder(folder, app=None, unlock=True):
                 status = "Used by another program"
 
             else:
-                try:
-                    path.unlink()
+                deleted, status = try_delete_file(path)
+                if deleted:
                     deleted_count += 1
                     deleted_mb += size / (1024**2)
-                    status = "Deleted"
-
-                except PermissionError:
+                else:
                     protected_count += 1
-                    status = "Needs Administrator Permission"
 
             row = (path.name, format_size(size), status)
             results.append(row)
@@ -65,8 +85,10 @@ def clean_folder(folder, app=None, unlock=True):
                 except Exception:
                     pass
 
-            if app and total_files and (
-                i % PROGRESS_UPDATE_INTERVAL == 0 or i == total_files
+            if (
+                app
+                and total_files
+                and (i % PROGRESS_UPDATE_INTERVAL == 0 or i == total_files)
             ):
                 try:
                     progress = i / total_files
@@ -166,8 +188,12 @@ def clean_junk_files(app=None):
         Path(os.path.expandvars(r"%temp%")),
         Path(os.path.expandvars(r"%LOCALAPPDATA%\\Temp")),
         Path(os.path.expandvars(r"%LOCALAPPDATA%\\CrashDumps")),
-        Path(os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportQueue")),
-        Path(os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportArchive")),
+        Path(
+            os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportQueue")
+        ),
+        Path(
+            os.path.expandvars(r"%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportArchive")
+        ),
         Path(os.path.expandvars(r"%APPDATA%\\Microsoft\\Windows\\Recent")),
         Path(os.path.expandvars(r"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer")),
     ]

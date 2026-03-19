@@ -1,7 +1,7 @@
 import os
 import time
 
-from cleaners import clean_folder
+from cleaners import clean_folder, try_delete_file
 
 
 def test_clean_folder_removes_files(tmp_path):
@@ -22,3 +22,35 @@ def test_clean_folder_removes_files(tmp_path):
     assert result["deleted_count"] == len(file_paths)
     assert all(not p.exists() for p in file_paths)
     assert not any(tmp_path.iterdir())
+
+
+def test_try_delete_file_reports_generic_permission_when_already_admin(
+    monkeypatch, tmp_path
+):
+    target = tmp_path / "locked.tmp"
+    target.write_text("hello")
+
+    monkeypatch.setattr("cleaners.is_admin", lambda: True)
+    monkeypatch.setattr(
+        "pathlib.Path.unlink", lambda self: (_ for _ in ()).throw(PermissionError())
+    )
+
+    deleted, status = try_delete_file(target)
+
+    assert deleted is False
+    assert status == "Permission denied"
+
+
+def test_try_delete_file_reports_admin_needed_when_not_elevated(monkeypatch, tmp_path):
+    target = tmp_path / "locked.tmp"
+    target.write_text("hello")
+
+    monkeypatch.setattr("cleaners.is_admin", lambda: False)
+    monkeypatch.setattr(
+        "pathlib.Path.unlink", lambda self: (_ for _ in ()).throw(PermissionError())
+    )
+
+    deleted, status = try_delete_file(target)
+
+    assert deleted is False
+    assert status == "Needs Administrator Permission"

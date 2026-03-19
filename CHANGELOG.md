@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.3 - 2026-03-20
+
+This release fixes a misleading cleanup status that could claim Administrator rights were needed even when the app was already elevated.
+
+- Retried deletes after clearing the read-only flag on Windows temp files.
+- Changed elevated delete failures to report a generic permission error instead of incorrectly asking for admin rights.
+- Added regression tests covering elevated and non-elevated permission handling.
+
 ## v1.0.2 - 2026-03-20
 
 This release focuses on smoother startup and a more responsive scheduler experience.
