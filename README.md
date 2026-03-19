@@ -94,6 +94,7 @@ The repo is configured to use a local pytest temp directory so test runs stay st
 
 - This project is Windows-only and uses Win32 APIs, Task Scheduler, and registry access.
 - The repo keeps `dist/MCleaner.exe` checked in while other generated build artifacts remain ignored.
+- This project is not open source. Usage is governed by [LICENSE.txt](LICENSE.txt).
 
 ---
 
