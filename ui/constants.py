@@ -4,17 +4,17 @@ import os
 import sys
 from pathlib import Path
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "1.0.0"
 
 
 def get_build_version() -> str:
-    """Return a short build identifier based on the current git commit (if available)."""
+    """Return the short hash of the latest commit."""
     try:
         import subprocess
 
         repo_dir = Path(__file__).resolve().parent.parent
         out = subprocess.check_output(
-            ["git", "describe", "--always"],
+            ["git", "rev-parse", "--short", "HEAD"],
             cwd=repo_dir,
             stderr=subprocess.DEVNULL,
         )
@@ -23,11 +23,15 @@ def get_build_version() -> str:
         return "unknown"
 
 
-# Try to import build version from build_info.py (created during build)
-try:
-    from build_info import BUILD_VERSION
-except ImportError:
-    BUILD_VERSION = get_build_version()
+BUILD_VERSION = get_build_version()
+
+if BUILD_VERSION == "unknown":
+    try:
+        from build_info import BUILD_VERSION as _BUILD_VERSION
+
+        BUILD_VERSION = _BUILD_VERSION
+    except ImportError:
+        pass
 
 
 def resource_path(relative_path: str) -> str:

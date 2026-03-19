@@ -46,7 +46,7 @@ def resource_path(relative_path):
 
 
 PREVIEW_SAMPLE_ROWS = 30
-APP_VERSION = "0.9.0"
+APP_VERSION = "1.0.0"
 
 
 def get_build_version():

@@ -23,10 +23,10 @@ CLEAN_PATHS = ["build", "dist", "__pycache__"]
 SPEC_FILES = ["MCleaner.spec", "main.spec", "build_info.py"]
 
 def get_build_version() -> str:
-    """Return a short build identifier based on the current git commit (if available)."""
+    """Return the short hash of the latest commit."""
     try:
         out = subprocess.check_output(
-            ["git", "describe", "--always"],
+            ["git", "rev-parse", "--short", "HEAD"],
             cwd=ROOT,
             stderr=subprocess.DEVNULL,
         )
