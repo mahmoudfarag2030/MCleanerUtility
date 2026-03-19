@@ -1,18 +1,48 @@
 """Shared constants and utilities for MCleaner UI."""
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-APP_VERSION = "1.0.0"
+DEFAULT_APP_VERSION = "1.0.1"
+
+
+def _normalize_version(raw_version: str) -> str:
+    """Strip the leading tag prefix from a git version string."""
+    return raw_version.removeprefix("v").strip()
+
+
+def get_app_version() -> str:
+    """Return the latest tagged app version."""
+    repo_dir = Path(__file__).resolve().parent.parent
+    try:
+        out = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+            cwd=repo_dir,
+            stderr=subprocess.DEVNULL,
+        )
+        version = _normalize_version(out.decode().strip())
+        if version:
+            return version
+    except Exception:
+        pass
+
+    try:
+        from build_info import APP_VERSION as _APP_VERSION
+
+        if _APP_VERSION:
+            return _normalize_version(_APP_VERSION)
+    except ImportError:
+        pass
+
+    return DEFAULT_APP_VERSION
 
 
 def get_build_version() -> str:
     """Return the short hash of the latest commit."""
+    repo_dir = Path(__file__).resolve().parent.parent
     try:
-        import subprocess
-
-        repo_dir = Path(__file__).resolve().parent.parent
         out = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=repo_dir,
@@ -20,18 +50,21 @@ def get_build_version() -> str:
         )
         return out.decode().strip()
     except Exception:
-        return "unknown"
+        pass
 
-
-BUILD_VERSION = get_build_version()
-
-if BUILD_VERSION == "unknown":
     try:
         from build_info import BUILD_VERSION as _BUILD_VERSION
 
-        BUILD_VERSION = _BUILD_VERSION
+        if _BUILD_VERSION:
+            return _BUILD_VERSION
     except ImportError:
         pass
+
+    return "unknown"
+
+
+APP_VERSION = get_app_version()
+BUILD_VERSION = get_build_version()
 
 
 def resource_path(relative_path: str) -> str:

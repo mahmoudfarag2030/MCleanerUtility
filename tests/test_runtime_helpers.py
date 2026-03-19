@@ -2,9 +2,10 @@ import sys
 import winreg
 from pathlib import Path
 
+import build_info
 from helpers import get_system_drive_root
 from startup_apps import toggle_startup_app, toggle_registry_startup
-from ui.constants import resource_path
+from ui.constants import get_app_version, get_build_version, resource_path
 
 
 def test_get_system_drive_root_defaults(monkeypatch):
@@ -23,6 +24,32 @@ def test_resource_path_uses_project_root_when_not_frozen(monkeypatch):
     result = Path(resource_path("MCleaner.png"))
     assert result.name == "MCleaner.png"
     assert result.parent == Path(__file__).resolve().parents[1]
+
+
+def test_get_app_version_strips_tag_prefix(monkeypatch):
+    monkeypatch.setattr(
+        "ui.constants.subprocess.check_output",
+        lambda *args, **kwargs: b"v1.2.3\n",
+    )
+    assert get_app_version() == "1.2.3"
+
+
+def test_get_app_version_falls_back_to_build_info(monkeypatch):
+    def raise_git_error(*args, **kwargs):
+        raise RuntimeError("git unavailable")
+
+    monkeypatch.setattr("ui.constants.subprocess.check_output", raise_git_error)
+    monkeypatch.setattr(build_info, "APP_VERSION", "v9.9.9", raising=False)
+    assert get_app_version() == "9.9.9"
+
+
+def test_get_build_version_falls_back_to_build_info(monkeypatch):
+    def raise_git_error(*args, **kwargs):
+        raise RuntimeError("git unavailable")
+
+    monkeypatch.setattr("ui.constants.subprocess.check_output", raise_git_error)
+    monkeypatch.setattr(build_info, "BUILD_VERSION", "abc1234", raising=False)
+    assert get_build_version() == "abc1234"
 
 
 def test_toggle_startup_app_uses_source_to_route_folder_entries(monkeypatch):

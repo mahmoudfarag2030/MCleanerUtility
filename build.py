@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+DEFAULT_APP_VERSION = "1.0.1"
 
 CLEAN_PATHS = ["build", "dist", "__pycache__"]
 SPEC_FILES = ["MCleaner.spec", "main.spec", "build_info.py"]
@@ -36,6 +37,20 @@ def get_build_version() -> str:
         return out.decode().strip()
     except Exception:
         return "unknown"
+
+
+def get_app_version() -> str:
+    """Return the latest tagged app version."""
+    try:
+        out = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+        )
+        version = out.decode().strip().removeprefix("v")
+        return version or DEFAULT_APP_VERSION
+    except Exception:
+        return DEFAULT_APP_VERSION
 
 
 def write_sha256(file_path: Path) -> Path:
@@ -83,10 +98,14 @@ def clean():
 
 
 def run_pyinstaller(extra_args=None):
-    # Create build info file with current build version
+    # Create build info file with the latest tagged app version and current build hash.
+    app_version = get_app_version()
     build_version = get_build_version()
     build_info_path = ROOT / "build_info.py"
-    build_info_path.write_text(f'BUILD_VERSION = "{build_version}"\n')
+    build_info_path.write_text(
+        f'APP_VERSION = "{app_version}"\nBUILD_VERSION = "{build_version}"\n',
+        encoding="ascii",
+    )
 
     # Use the current Python interpreter to ensure we run PyInstaller from the active env.
     args = [sys.executable, "-m", "PyInstaller"] + PYINSTALLER_DEFAULT_ARGS

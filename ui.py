@@ -46,15 +46,41 @@ def resource_path(relative_path):
 
 
 PREVIEW_SAMPLE_ROWS = 30
-APP_VERSION = "1.0.0"
+DEFAULT_APP_VERSION = "1.0.1"
+
+
+def get_app_version():
+    """Return the latest tagged app version."""
+    try:
+        repo_dir = Path(__file__).resolve().parent
+        out = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+            cwd=repo_dir,
+            stderr=subprocess.DEVNULL,
+        )
+        version = out.decode().strip().removeprefix("v")
+        if version:
+            return version
+    except Exception:
+        pass
+
+    try:
+        from build_info import APP_VERSION as _APP_VERSION
+
+        if _APP_VERSION:
+            return _APP_VERSION.removeprefix("v")
+    except ImportError:
+        pass
+
+    return DEFAULT_APP_VERSION
+
+
+APP_VERSION = get_app_version()
 
 
 def get_build_version():
     """Return a short build identifier based on the current git commit (if available)."""
     try:
-        import subprocess
-        from pathlib import Path
-
         repo_dir = Path(__file__).resolve().parent
         out = subprocess.check_output(
             ["git", "describe", "--always", "--dirty"],
@@ -63,7 +89,17 @@ def get_build_version():
         )
         return out.decode().strip()
     except Exception:
-        return "unknown"
+        pass
+
+    try:
+        from build_info import BUILD_VERSION as _BUILD_VERSION
+
+        if _BUILD_VERSION:
+            return _BUILD_VERSION
+    except ImportError:
+        pass
+
+    return "unknown"
 
 
 BUILD_VERSION = get_build_version()
